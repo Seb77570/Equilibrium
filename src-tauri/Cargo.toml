@@ -1,0 +1,38 @@
+[package]
+name = "equilibrium-dashboard"
+version = "0.1.0"
+description = "A desktop cockpit for developers working with Claude Code"
+authors = ["Seb77570"]
+edition = "2021"
+
+[lib]
+name = "equilibrium_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+portable-pty = "0.9.0"
+tokio = { version = "1.52.1", features = ["full"] }
+uuid = { version = "1.23.1", features = ["v4"] }
+# Local HTTP server (release-only) so the main webview can load from
+# http://localhost:<port> instead of http://tauri.localhost — that puts the
+# parent on the same eTLD+1 as the user's project (localhost:3000), which
+# means iframe cookies are first-party and Supabase login works.
+axum = "0.7"
+
+# Windows-only: needed to flip the WebView2 setting that intercepts F5 /
+# Ctrl+R / etc. Versions pinned to match what Tauri 2.11 already pulls in
+# (webview2-com 0.38, windows 0.61) so the COM interface types here are the
+# same ones Tauri created — required for the cast to ICoreWebView2Settings3.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = "0.61"

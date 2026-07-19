@@ -1,0 +1,19 @@
+{
+  "identifier": "default",
+  "description": "Default capability for the app",
+  "windows": ["*"],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:window:default",
+    "dialog:allow-open",
+    "dialog:allow-save"
+  ]
+}

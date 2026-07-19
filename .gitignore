@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# Tauri build output
+src-tauri/target/
+
+# Production
+*.tsbuildinfo
+next-env.d.ts
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env*.local
+
+# Vercel
+.vercel
+
+# GSD framework tooling (kept locally, not part of the published app)
+.gsd/
+.agent/
+.gemini/
+adapters/
+docs/
+GSD-COMMAND-REFERENCE.md
+GSD-STYLE.md
+PROJECT_RULES.md
+model_capabilities.yaml
+CHANGELOG.md
+VERSION
+scripts/search_repo.*
+scripts/setup_search.*
+scripts/validate-*
+
+# Local user data / machine-specific files (not part of the published app)
+dashboard.json
+equilibrium.json
+Screenshots/image.png
+Screenshots/image copy.png
+
+# OS generated
+Thumbs.db
+.DS_Store
+
+# IDE
+.idea/
+*.swp
+
+# Local design mockup (throwaway, not part of the app)
+equilibrium-redesign-mockup.html
