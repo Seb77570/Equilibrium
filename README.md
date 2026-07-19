@@ -38,10 +38,6 @@ Everything runs and stays **100% local**. Equilibrium makes no network calls to 
 |---|---|
 | <img src="Screenshots/dashboard.png" width="400" /> | <img src="Screenshots/timeline.png" width="400" /> |
 
-| Workspace (terminals + explorer) | Claude conversations |
-|---|---|
-| <img src="Screenshots/workspace.png" width="400" /> | <img src="Screenshots/claude-sessions.png" width="400" /> |
-
 ## ⚠️ A note on the Claude Code history format
 
 The session browser reads Claude Code's **internal, undocumented** on-disk format (`~/.claude/projects/*.jsonl` and `~/.claude/sessions/`). Anthropic can change this format at any time without notice, which may break the session browser until Equilibrium is updated. The rest of the app (dashboard, terminals, time tracking) does not depend on it.
