@@ -638,9 +638,9 @@ function AddEntryModal({ projects, onClose }: { projects: Project[]; onClose: ()
           onChange={(e) => setProjectPath(e.target.value)}
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/40 mb-4"
         >
-          {projects.length === 0 && <option value="">No projects available</option>}
+          {projects.length === 0 && <option value="" className="bg-[#18181b] text-white">No projects available</option>}
           {projects.map((p) => (
-            <option key={p.path} value={p.path}>{p.name}</option>
+            <option key={p.path} value={p.path} className="bg-[#18181b] text-white">{p.name}</option>
           ))}
         </select>
 
