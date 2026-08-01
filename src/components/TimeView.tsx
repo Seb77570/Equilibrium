@@ -321,6 +321,37 @@ export default function TimeView() {
     return total;
   }, [byProject, now, dayStart, dayEnd]);
 
+  // ── Monthly average ─────────────────────────────────────────────────────
+  // Average working time per worked day over the displayed day's month, all
+  // projects summed together (a "worked day" = any day with at least one
+  // entry). Also builds the per-project breakdown for the hover tooltip:
+  // each project's own daily average within the month.
+  const monthlyAvg = useMemo(() => {
+    const mStart = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+    const mEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime();
+    let total = 0;
+    const workedDays = new Set<number>();
+    const perProject = new Map<string, { total: number; days: Set<number> }>();
+    for (const e of entries) {
+      const eEnd = e.running ? now : e.end_ms;
+      const s = Math.max(e.start_ms, mStart);
+      const en = Math.min(eEnd, mEnd);
+      if (en <= s) continue;
+      const dur = en - s;
+      const dayKey = new Date(s).getDate();
+      total += dur;
+      workedDays.add(dayKey);
+      let p = perProject.get(e.project_path);
+      if (!p) { p = { total: 0, days: new Set<number>() }; perProject.set(e.project_path, p); }
+      p.total += dur;
+      p.days.add(dayKey);
+    }
+    const rows = Array.from(perProject.entries())
+      .map(([path, v]) => ({ path, avg: v.total / v.days.size, total: v.total }))
+      .sort((a, b) => b.avg - a.avg);
+    return { avg: workedDays.size ? total / workedDays.size : 0, days: workedDays.size, rows };
+  }, [entries, date, now]);
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -473,11 +504,49 @@ export default function TimeView() {
         </div>
       )}
 
-      {/* Day total */}
-      {byProject.size > 0 && (
+      {/* Day total + monthly average */}
+      {(byProject.size > 0 || monthlyAvg.days > 0) && (
         <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-end gap-3 text-sm">
-          <span className="text-white/40 uppercase tracking-widest text-[10px] font-bold">Total</span>
-          <span className="font-mono tabular-nums text-white text-base font-bold">{formatMinutes(grandTotalMs)}</span>
+          {monthlyAvg.days > 0 && (
+            <>
+              {/* Hover the value for the per-project breakdown. */}
+              <div className="relative group flex items-center gap-2 cursor-default">
+                <span className="text-white/40 uppercase tracking-widest text-[10px] font-bold">
+                  Average working time for {MONTH_NAMES[date.getMonth()]}
+                </span>
+                <span className="font-mono tabular-nums text-brand text-base font-bold">
+                  {formatMinutes(monthlyAvg.avg)}
+                  <span className="text-white/40 text-xs font-normal"> /day</span>
+                </span>
+                <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-72 bg-[#18181b] border border-white/10 rounded-xl shadow-2xl p-3 z-50">
+                  <div className="text-[10px] uppercase tracking-widest text-white/40 font-bold mb-2">
+                    Daily average by project — {MONTH_NAMES[date.getMonth()]}
+                  </div>
+                  {monthlyAvg.rows.map((r) => (
+                    <div key={r.path} className="flex items-center justify-between gap-3 py-0.5 text-xs">
+                      <span className="text-white/70 truncate">{projectName(r.path)}</span>
+                      <span className="font-mono tabular-nums text-white shrink-0">
+                        {formatMinutes(r.avg)}
+                        <span className="text-white/30"> /day</span>
+                        <span className="text-white/30"> · {formatMinutes(r.total)}</span>
+                      </span>
+                    </div>
+                  ))}
+                  <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-xs">
+                    <span className="text-white/40">Worked days</span>
+                    <span className="font-mono tabular-nums text-white">{monthlyAvg.days}</span>
+                  </div>
+                </div>
+              </div>
+              <span className="text-white/10 select-none">|</span>
+            </>
+          )}
+          {byProject.size > 0 && (
+            <>
+              <span className="text-white/40 uppercase tracking-widest text-[10px] font-bold">Total</span>
+              <span className="font-mono tabular-nums text-white text-base font-bold">{formatMinutes(grandTotalMs)}</span>
+            </>
+          )}
         </div>
       )}
 
