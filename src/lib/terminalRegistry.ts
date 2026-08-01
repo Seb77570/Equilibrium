@@ -27,6 +27,8 @@ export interface TerminalEntry {
   // is disposed; React only moves it in/out of containers.
   wrapper: HTMLDivElement;
   opened: boolean;
+  // Keyboard shortcut handler bound (once per entry — see TerminalTab).
+  keyHandlerBound: boolean;
   // PTY listener + onData persist for the entry's lifetime so terminal
   // output is never dropped while a tab is hidden.
   unlistenPty?: () => void;
@@ -78,6 +80,7 @@ export function getOrCreateTerminalEntry(id: string, shell?: string): TerminalEn
     fitAddon,
     wrapper,
     opened: false,
+    keyHandlerBound: false,
     spawnInitiated: false,
     setupComplete: false,
     lastSentRows: 0,

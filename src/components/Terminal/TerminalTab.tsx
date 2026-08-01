@@ -33,23 +33,39 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
     // helpers move with it without losing state.
     container.appendChild(entry.wrapper);
 
-    // First mount of this id: actually call xterm.open() and bind keyboard
-    // shortcuts. Subsequent mounts skip this entirely.
+    // Full-viewport repaint. Fixes two WebView2 DOM-renderer artifacts:
+    // 1. the intermittent "permanently black terminal" when xterm opened
+    //    before the container had real dimensions, and
+    // 2. stale glyphs — rows xterm believes are current but whose pixels
+    //    were never recomposited (selecting text used to "reveal" the real
+    //    characters by forcing exactly this kind of repaint).
+    const repaintNow = () => {
+      try {
+        entry.fitAddon.fit();
+        entry.term.refresh(0, Math.max(0, entry.term.rows - 1));
+      } catch (_) {}
+    };
+
     if (!entry.opened) {
       entry.term.open(entry.wrapper);
       entry.opened = true;
+    }
 
-      // Renderer kick. Opening before the container has real dimensions can
-      // leave xterm's DOM renderer blank until something forces a relayout —
-      // this is the intermittent "permanently black terminal". (The now-removed
-      // [equil] log writes used to trigger this implicitly.) A fit + refresh
-      // once the container is laid out paints it; invisible, no stray content.
-      requestAnimationFrame(() => {
-        try {
-          entry.fitAddon.fit();
-          entry.term.refresh(0, Math.max(0, entry.term.rows - 1));
-        } catch (_) {}
-      });
+    // Renderer kick on EVERY mount (first open, tab switches, split moves —
+    // the wrapper is re-parented via appendChild and WebView2 sometimes keeps
+    // stale pixels for the moved subtree). Invisible, no stray content.
+    requestAnimationFrame(repaintNow);
+
+    // Returning to the app window (alt-tab, other monitor) is another moment
+    // WebView2 shows stale terminal pixels — repaint on re-focus/visibility.
+    const onVisible = () => { if (!document.hidden) repaintNow(); };
+    window.addEventListener('focus', repaintNow);
+    document.addEventListener('visibilitychange', onVisible);
+
+    // Bind keyboard shortcuts once per entry (attachCustomKeyEventHandler
+    // REPLACES the handler, so this only needs to happen on first mount).
+    if (!entry.keyHandlerBound) {
+      entry.keyHandlerBound = true;
 
       //   Ctrl+V             → paste from clipboard (xterm sends raw ^V otherwise)
       //   Ctrl+Backspace     → backward-kill-word — readline / PSReadLine bind ^W there
@@ -169,6 +185,24 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
     let receivedOutput = false;
     let replayed = false;
     let replayTimer: ReturnType<typeof setInterval> | undefined;
+
+    // Anti-stale-glyph repaint during output. WebView2 sometimes skips
+    // recompositing rows the DOM renderer updated, leaving wrong characters
+    // on screen until something repaints (selection used to do it by hand).
+    // Repaint 150ms after output goes quiet, and at most once per second
+    // during sustained streaming (e.g. Claude's spinner) so long bursts
+    // can't accumulate artifacts. Lives with the persistent PTY listener.
+    let staleTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastStreamRepaint = 0;
+    const repaintViewport = () => {
+      lastStreamRepaint = Date.now();
+      try { entry.term.refresh(0, Math.max(0, entry.term.rows - 1)); } catch (_) {}
+    };
+    const scheduleRepaint = () => {
+      if (Date.now() - lastStreamRepaint > 1000) { repaintViewport(); return; }
+      if (staleTimer) clearTimeout(staleTimer);
+      staleTimer = setTimeout(repaintViewport, 150);
+    };
 
     // Claude working/idle detection via its animated spinner glyph. While
     // generating/running tools Claude rotates a star glyph (✶ ✻ ✽ ✢ …) that
@@ -292,6 +326,7 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
               checkAgentMarker(event.payload.data);
             }
             entry.term.write(event.payload.data);
+            scheduleRepaint();
             if (initialCommand && !initialCommandsSent.has(id)) {
               if (quietTimer) clearTimeout(quietTimer);
               quietTimer = setTimeout(sendInitialCommand, 800);
@@ -406,6 +441,7 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
                   replayed = true;
                   receivedOutput = true;
                   entry.term.write(buffered);
+                  scheduleRepaint();
                   log('recovered dropped initial output via buffer replay', 'warn');
                   clearInterval(replayTimer);
                   replayTimer = undefined;
@@ -437,6 +473,8 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
       if (resizeTimer) clearTimeout(resizeTimer);
       if (replayTimer) clearInterval(replayTimer);
       if (agentIdleTimer) clearTimeout(agentIdleTimer);
+      window.removeEventListener('focus', repaintNow);
+      document.removeEventListener('visibilitychange', onVisible);
       container.removeEventListener('mousedown', markRead);
       resizeObserver.disconnect();
       // Detach the wrapper from this container — it stays alive in the
