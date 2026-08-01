@@ -10,6 +10,15 @@ interface Project {
   path: string;
 }
 
+// Mirrors the dashboard's section config (dashboard.json) so the Add Record
+// dropdown can group projects the same way, with the same section colors.
+interface ProjectSection {
+  id: string;
+  title: string;
+  color: string;
+  project_paths: string[];
+}
+
 // Day boundaries (local time) for "all entries that overlap this day".
 function dayBounds(d: Date): { start: number; end: number } {
   const start = new Date(d);
@@ -606,6 +615,34 @@ function AddEntryModal({ projects, onClose }: { projects: Project[]; onClose: ()
   const [end, setEnd] = useState<string>(() => toDatetimeLocal(Date.now()));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sections, setSections] = useState<ProjectSection[]>([]);
+
+  useEffect(() => {
+    invoke<{ sections: ProjectSection[] }>('get_dashboard_config')
+      .then((cfg) => setSections(cfg.sections ?? []))
+      .catch(() => {});
+  }, []);
+
+  // Same grouping as the dashboard: sections in order (each listing its
+  // projects in section order), then everything not in a section.
+  const { grouped, rest } = useMemo(() => {
+    const byPath = new Map(projects.map((p) => [p.path, p]));
+    const used = new Set<string>();
+    const grouped = sections
+      .map((s) => ({
+        section: s,
+        items: s.project_paths
+          .map((path) => {
+            const p = byPath.get(path);
+            if (p) used.add(path);
+            return p;
+          })
+          .filter((p): p is Project => !!p),
+      }))
+      .filter((g) => g.items.length > 0);
+    const rest = projects.filter((p) => !used.has(p.path));
+    return { grouped, rest };
+  }, [projects, sections]);
 
   const commit = async () => {
     setError(null);
@@ -639,8 +676,28 @@ function AddEntryModal({ projects, onClose }: { projects: Project[]; onClose: ()
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/40 mb-4"
         >
           {projects.length === 0 && <option value="" className="bg-[#18181b] text-white">No projects available</option>}
-          {projects.map((p) => (
-            <option key={p.path} value={p.path} className="bg-[#18181b] text-white">{p.name}</option>
+          {grouped.map(({ section, items }) => (
+            <optgroup
+              key={section.id}
+              label={`● ${section.title}`}
+              className="bg-[#18181b] not-italic"
+              style={{ color: section.color }}
+            >
+              {items.map((p) => (
+                <option key={p.path} value={p.path} className="bg-[#18181b] text-white">{p.name}</option>
+              ))}
+            </optgroup>
+          ))}
+          {rest.length > 0 && (grouped.length > 0 ? (
+            <optgroup label="● Uncategorized" className="bg-[#18181b] not-italic text-white/50">
+              {rest.map((p) => (
+                <option key={p.path} value={p.path} className="bg-[#18181b] text-white">{p.name}</option>
+              ))}
+            </optgroup>
+          ) : (
+            rest.map((p) => (
+              <option key={p.path} value={p.path} className="bg-[#18181b] text-white">{p.name}</option>
+            ))
           ))}
         </select>
 
