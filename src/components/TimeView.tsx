@@ -323,34 +323,32 @@ export default function TimeView() {
   }, [byProject, now, dayStart, dayEnd]);
 
   // ── Monthly average ─────────────────────────────────────────────────────
-  // Average working time per worked day over the displayed day's month, all
-  // projects summed together (a "worked day" = any day with at least one
-  // entry). Also builds the per-project breakdown for the hover tooltip:
-  // each project's own daily average within the month.
+  // Average working time per CALENDAR day over the displayed day's month
+  // (days with no entries count too — this matches declarations and the CSV
+  // export). For the current month, only the days elapsed so far divide the
+  // total; for past months, the full month length. The hover tooltip breaks
+  // the same calculation down per project.
   const monthlyAvg = useMemo(() => {
     const mStart = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
     const mEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime();
     let total = 0;
-    const workedDays = new Set<number>();
-    const perProject = new Map<string, { total: number; days: Set<number> }>();
+    const perProject = new Map<string, number>();
     for (const e of entries) {
       const eEnd = e.running ? now : e.end_ms;
       const s = Math.max(e.start_ms, mStart);
       const en = Math.min(eEnd, mEnd);
       if (en <= s) continue;
       const dur = en - s;
-      const dayKey = new Date(s).getDate();
       total += dur;
-      workedDays.add(dayKey);
-      let p = perProject.get(e.project_path);
-      if (!p) { p = { total: 0, days: new Set<number>() }; perProject.set(e.project_path, p); }
-      p.total += dur;
-      p.days.add(dayKey);
+      perProject.set(e.project_path, (perProject.get(e.project_path) ?? 0) + dur);
     }
+    const today = new Date(now);
+    const sameMonth = today.getFullYear() === date.getFullYear() && today.getMonth() === date.getMonth();
+    const days = sameMonth ? today.getDate() : daysInMonth(date.getFullYear(), date.getMonth());
     const rows = Array.from(perProject.entries())
-      .map(([path, v]) => ({ path, avg: v.total / v.days.size, total: v.total }))
+      .map(([path, t]) => ({ path, avg: t / days, total: t }))
       .sort((a, b) => b.avg - a.avg);
-    return { avg: workedDays.size ? total / workedDays.size : 0, days: workedDays.size, rows };
+    return { avg: days > 0 && total > 0 ? total / days : 0, days, hasData: total > 0, rows };
   }, [entries, date, now]);
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -506,9 +504,9 @@ export default function TimeView() {
       )}
 
       {/* Day total + monthly average */}
-      {(byProject.size > 0 || monthlyAvg.days > 0) && (
+      {(byProject.size > 0 || monthlyAvg.hasData) && (
         <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-end gap-3 text-sm">
-          {monthlyAvg.days > 0 && (
+          {monthlyAvg.hasData && (
             <>
               {/* Hover the value for the per-project breakdown. */}
               <div className="relative group flex items-center gap-2 cursor-default">
@@ -534,7 +532,7 @@ export default function TimeView() {
                     </div>
                   ))}
                   <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-xs">
-                    <span className="text-white/40">Worked days</span>
+                    <span className="text-white/40">Days counted</span>
                     <span className="font-mono tabular-nums text-white">{monthlyAvg.days}</span>
                   </div>
                 </div>
