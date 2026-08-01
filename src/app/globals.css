@@ -122,3 +122,27 @@ body {
 .cheatsheet-prose blockquote strong {
   @apply text-amber-200;
 }
+
+/* ── Split-flap datetime picker (TimeView) ──────────────────────────────────
+   Incrementing rolls the new value in from the bottom (odometer-style),
+   decrementing from the top. scaleY gives the flap-fold feel. */
+.flip-up {
+  animation: flip-up 160ms ease-out;
+}
+.flip-down {
+  animation: flip-down 160ms ease-out;
+}
+@keyframes flip-up {
+  from { transform: translateY(45%) scaleY(0.4); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes flip-down {
+  from { transform: translateY(-45%) scaleY(0.4); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flip-up,
+  .flip-down {
+    animation: none;
+  }
+}

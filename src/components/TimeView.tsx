@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ChevronLeft, ChevronRight, Trash2, Clock, X, Plus, Volume2, VolumeX, Download } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, Clock, X, Plus, Volume2, VolumeX, Download } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { TimeEntry, useTimeStore, entryDurationMs, formatMinutes, useNow } from '@/app/store/timeStore';
 
@@ -87,20 +87,68 @@ function splitLocal(s: string): DateTimeParts {
 
 const joinLocal = (p: DateTimeParts) => `${p.y}-${pad2(p.m0 + 1)}-${pad2(p.d)}T${pad2(p.hh)}:${pad2(p.mm)}`;
 
-const PICKER_OPTION_CLASS = 'bg-[#18181b] text-white';
-const PICKER_SELECT_CLASS =
-  'bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-brand/40 cursor-pointer';
+// Split-flap concept (SNCF departure board, modernized): five columns left
+// to right — hours, minutes, then day / month-name / year. Arrows above and
+// below each column step the value (wrapping around); the mouse wheel works
+// too. Value changes play a small flap animation (.flip-up / .flip-down in
+// globals.css) under a seam line across the middle of each tile.
 
-// Dial geometry. Hours use two rings (outer 1-12, inner 13-23 + 00, like a
-// 24h Material dial); minutes use one ring with labels every 5.
-const DIAL_SIZE = 232;
-const DIAL_C = DIAL_SIZE / 2;
-const R_OUTER = 94;
-const R_INNER = 62;
+function FlipColumn({
+  label, display, onStep, widthClass, textClass = 'text-2xl tabular-nums',
+}: {
+  label: string;
+  display: string;
+  onStep: (dir: 1 | -1) => void;
+  widthClass: string;
+  textClass?: string;
+}) {
+  // Remember the last step direction so the flap animates the way it "rolls".
+  const [dir, setDir] = useState<1 | -1>(1);
+  const step = (d: 1 | -1) => { setDir(d); onStep(d); };
+  return (
+    <div className={`flex flex-col items-center gap-1 ${widthClass}`}>
+      <button
+        type="button"
+        onClick={() => step(1)}
+        aria-label={`${label} up`}
+        className="w-full h-6 flex items-center justify-center rounded-md text-white/30 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+      >
+        <ChevronUp size={14} />
+      </button>
+      <div
+        onWheel={(e) => step(e.deltaY > 0 ? 1 : -1)}
+        className="relative w-full h-12 flex items-center justify-center bg-white/5 border border-white/10 rounded-lg overflow-hidden"
+      >
+        <span key={display} className={`block font-bold text-white ${textClass} ${dir === 1 ? 'flip-up' : 'flip-down'}`}>
+          {display}
+        </span>
+        {/* Flap seam — the split line across the middle of the tile. */}
+        <div className="absolute left-0 right-0 top-1/2 h-px bg-black/50 pointer-events-none" />
+      </div>
+      <button
+        type="button"
+        onClick={() => step(-1)}
+        aria-label={`${label} down`}
+        className="w-full h-6 flex items-center justify-center rounded-md text-white/30 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+      >
+        <ChevronDown size={14} />
+      </button>
+      <span className="text-[9px] uppercase tracking-widest text-white/30 font-bold">{label}</span>
+    </div>
+  );
+}
 
-function dialPos(idx: number, total: number, r: number): { x: number; y: number } {
-  const a = (idx / total) * 2 * Math.PI - Math.PI / 2;
-  return { x: DIAL_C + r * Math.cos(a), y: DIAL_C + r * Math.sin(a) };
+// Aligns colon / group divider with the value tiles: same arrow-row and
+// label-row heights as FlipColumn, content only at tile height.
+function FlipSpacer({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="h-6" />
+      <div className="h-12 flex items-center">{children}</div>
+      <div className="h-6" />
+      <span className="text-[9px] font-bold">&nbsp;</span>
+    </div>
+  );
 }
 
 function DateTimePickerModal({
@@ -110,10 +158,6 @@ function DateTimePickerModal({
   onChange: (next: DateTimeParts) => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<'hours' | 'minutes'>('hours');
-  const dialRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef(false);
-
   const set = (patch: Partial<DateTimeParts>) => {
     const next = { ...value, ...patch };
     // Changing month/year can invalidate the day (e.g. 31 → February).
@@ -121,154 +165,39 @@ function DateTimePickerModal({
     onChange(next);
   };
 
-  // Shared pointer → value math so both click and drag select on the dial.
-  const applyPointer = (clientX: number, clientY: number) => {
-    const rect = dialRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const dx = clientX - rect.left - DIAL_C;
-    const dy = clientY - rect.top - DIAL_C;
-    const angle = (Math.atan2(dy, dx) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI);
-    if (mode === 'hours') {
-      const idx = Math.round(angle / (Math.PI / 6)) % 12;
-      const inner = Math.hypot(dx, dy) < (R_OUTER + R_INNER) / 2;
-      set({ hh: inner ? (idx === 0 ? 0 : idx + 12) : (idx === 0 ? 12 : idx) });
-    } else {
-      set({ mm: Math.round(angle / (Math.PI / 30)) % 60 });
-    }
+  const stepHours = (d: 1 | -1) => set({ hh: (value.hh + d + 24) % 24 });
+  const stepMinutes = (d: 1 | -1) => set({ mm: (value.mm + d + 60) % 60 });
+  const stepDay = (d: 1 | -1) => {
+    const n = daysInMonth(value.y, value.m0);
+    set({ d: ((value.d - 1 + d + n) % n) + 1 });
   };
-
-  const now = new Date();
-  const years: number[] = [];
-  for (let y = now.getFullYear() + 1; y >= now.getFullYear() - 6; y--) years.push(y);
-
-  const selectedHourPos = dialPos(value.hh % 12, 12, value.hh === 0 || value.hh > 12 ? R_INNER : R_OUTER);
-  const selectedMinutePos = dialPos(value.mm, 60, R_OUTER);
-  const hand = mode === 'hours' ? selectedHourPos : selectedMinutePos;
-
-  const hourButton = (h: number) => {
-    const inner = h === 0 || h > 12;
-    const p = dialPos(h % 12, 12, inner ? R_INNER : R_OUTER);
-    const selected = value.hh === h;
-    return (
-      <button
-        key={h}
-        type="button"
-        onClick={() => { set({ hh: h }); setMode('minutes'); }}
-        className={`absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full text-xs tabular-nums transition-colors cursor-pointer focus:outline-none ${
-          selected ? 'bg-brand text-white font-bold' : inner ? 'text-white/40 hover:bg-white/10' : 'text-white/80 hover:bg-white/10'
-        }`}
-        style={{ left: p.x, top: p.y }}
-      >
-        {pad2(h)}
-      </button>
-    );
-  };
+  const stepMonth = (d: 1 | -1) => set({ m0: (value.m0 + d + 12) % 12 });
+  const stepYear = (d: 1 | -1) => set({ y: value.y + d });
 
   return (
     <div
       className="fixed inset-0 z-[400] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-5 w-[300px]">
-        {/* Date row: day first, month as text, then year. */}
-        <div className="flex gap-2 mb-5">
-          <select
-            value={value.d}
-            onChange={(e) => set({ d: +e.target.value })}
-            className={`${PICKER_SELECT_CLASS} w-16`}
-            aria-label="Day"
-          >
-            {Array.from({ length: daysInMonth(value.y, value.m0) }, (_, i) => (
-              <option key={i + 1} value={i + 1} className={PICKER_OPTION_CLASS}>{i + 1}</option>
-            ))}
-          </select>
-          <select
-            value={value.m0}
-            onChange={(e) => set({ m0: +e.target.value })}
-            className={`${PICKER_SELECT_CLASS} flex-1`}
-            aria-label="Month"
-          >
-            {MONTH_NAMES.map((name, i) => (
-              <option key={name} value={i} className={PICKER_OPTION_CLASS}>{name}</option>
-            ))}
-          </select>
-          <select
-            value={value.y}
-            onChange={(e) => set({ y: +e.target.value })}
-            className={`${PICKER_SELECT_CLASS} w-20`}
-            aria-label="Year"
-          >
-            {years.map((y) => (
-              <option key={y} value={y} className={PICKER_OPTION_CLASS}>{y}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Time display — each half is a mode switch. */}
-        <div className="flex items-center justify-center gap-1 mb-4 text-3xl font-bold tabular-nums">
-          <button
-            type="button"
-            onClick={() => setMode('hours')}
-            className={`px-2 py-0.5 rounded-lg transition-colors cursor-pointer ${mode === 'hours' ? 'bg-brand/15 text-brand' : 'text-white/50 hover:text-white'}`}
-          >
-            {pad2(value.hh)}
-          </button>
-          <span className="text-white/30">:</span>
-          <button
-            type="button"
-            onClick={() => setMode('minutes')}
-            className={`px-2 py-0.5 rounded-lg transition-colors cursor-pointer ${mode === 'minutes' ? 'bg-brand/15 text-brand' : 'text-white/50 hover:text-white'}`}
-          >
-            {pad2(value.mm)}
-          </button>
-        </div>
-
-        {/* Clock dial. */}
-        <div
-          ref={dialRef}
-          className="relative mx-auto rounded-full bg-white/5 select-none touch-none"
-          style={{ width: DIAL_SIZE, height: DIAL_SIZE }}
-          onPointerDown={(e) => {
-            draggingRef.current = true;
-            (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-            applyPointer(e.clientX, e.clientY);
-          }}
-          onPointerMove={(e) => { if (draggingRef.current) applyPointer(e.clientX, e.clientY); }}
-          onPointerUp={() => {
-            draggingRef.current = false;
-            if (mode === 'hours') setMode('minutes');
-          }}
-        >
-          <svg width={DIAL_SIZE} height={DIAL_SIZE} className="absolute inset-0 pointer-events-none text-brand">
-            <line x1={DIAL_C} y1={DIAL_C} x2={hand.x} y2={hand.y} stroke="currentColor" strokeWidth="2" />
-            <circle cx={DIAL_C} cy={DIAL_C} r="3" fill="currentColor" />
-            <circle cx={hand.x} cy={hand.y} r="15" fill="currentColor" opacity="0.25" />
-          </svg>
-          {mode === 'hours' ? (
-            <>
-              {Array.from({ length: 12 }, (_, i) => hourButton(i + 1))}
-              {Array.from({ length: 12 }, (_, i) => hourButton(i === 11 ? 0 : i + 13))}
-            </>
-          ) : (
-            Array.from({ length: 12 }, (_, i) => {
-              const m = i * 5;
-              const p = dialPos(m, 60, R_OUTER);
-              const selected = value.mm === m;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => set({ mm: m })}
-                  className={`absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full text-xs tabular-nums transition-colors cursor-pointer focus:outline-none ${
-                    selected ? 'bg-brand text-white font-bold' : 'text-white/80 hover:bg-white/10'
-                  }`}
-                  style={{ left: p.x, top: p.y }}
-                >
-                  {pad2(m)}
-                </button>
-              );
-            })
-          )}
+      <div className="bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-5">
+        <div className="flex items-start gap-1.5">
+          <FlipColumn label="Hours" display={pad2(value.hh)} onStep={stepHours} widthClass="w-14" />
+          <FlipSpacer>
+            <span className="text-2xl font-bold text-white/30">:</span>
+          </FlipSpacer>
+          <FlipColumn label="Min" display={pad2(value.mm)} onStep={stepMinutes} widthClass="w-14" />
+          <FlipSpacer>
+            <div className="h-12 w-px bg-white/10 mx-2" />
+          </FlipSpacer>
+          <FlipColumn label="Day" display={pad2(value.d)} onStep={stepDay} widthClass="w-14" />
+          <FlipColumn
+            label="Month"
+            display={MONTH_NAMES[value.m0]}
+            onStep={stepMonth}
+            widthClass="w-28"
+            textClass="text-sm uppercase tracking-wider"
+          />
+          <FlipColumn label="Year" display={String(value.y)} onStep={stepYear} widthClass="w-[4.5rem]" />
         </div>
 
         <div className="flex justify-end mt-4">
