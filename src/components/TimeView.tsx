@@ -61,10 +61,10 @@ function parseDatetimeLocal(s: string): number | null {
 }
 
 // ── Custom date-time picker ────────────────────────────────────────────────
-// Replaces the native datetime-local inputs: a day / month-name / year date
-// row plus a 24h clock dial (pick hours, then minutes — no AM/PM). The value
-// stays in the same "YYYY-MM-DDTHH:mm" local string the rest of the file
-// already parses, so callers don't change.
+// Replaces the native datetime-local inputs with inline split-flap rows
+// (hours, minutes | day, month-name, year — 24h, no AM/PM). The value stays
+// in the same "YYYY-MM-DDTHH:mm" local string the rest of the file already
+// parses, so callers don't change.
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -133,115 +133,71 @@ function FlipColumn({
       >
         <ChevronDown size={14} />
       </button>
-      <span className="text-[9px] uppercase tracking-widest text-white/30 font-bold">{label}</span>
     </div>
   );
 }
 
-// Aligns colon / group divider with the value tiles: same arrow-row and
-// label-row heights as FlipColumn, content only at tile height.
+// Aligns colon / group divider with the value tiles: same arrow-row heights
+// as FlipColumn, content only at tile height.
 function FlipSpacer({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-1">
       <div className="h-6" />
       <div className="h-12 flex items-center">{children}</div>
       <div className="h-6" />
-      <span className="text-[9px] font-bold">&nbsp;</span>
     </div>
   );
 }
 
-function DateTimePickerModal({
-  value, onChange, onClose,
-}: {
-  value: DateTimeParts;
-  onChange: (next: DateTimeParts) => void;
-  onClose: () => void;
-}) {
-  const set = (patch: Partial<DateTimeParts>) => {
-    const next = { ...value, ...patch };
-    // Changing month/year can invalidate the day (e.g. 31 → February).
-    next.d = Math.min(next.d, daysInMonth(next.y, next.m0));
-    onChange(next);
-  };
-
-  const stepHours = (d: 1 | -1) => set({ hh: (value.hh + d + 24) % 24 });
-  const stepMinutes = (d: 1 | -1) => set({ mm: (value.mm + d + 60) % 60 });
-  const stepDay = (d: 1 | -1) => {
-    const n = daysInMonth(value.y, value.m0);
-    set({ d: ((value.d - 1 + d + n) % n) + 1 });
-  };
-  const stepMonth = (d: 1 | -1) => set({ m0: (value.m0 + d + 12) % 12 });
-  const stepYear = (d: 1 | -1) => set({ y: value.y + d });
-
-  return (
-    <div
-      className="fixed inset-0 z-[400] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-5">
-        <div className="flex items-start gap-1.5">
-          <FlipColumn label="Hours" display={pad2(value.hh)} onStep={stepHours} widthClass="w-14" />
-          <FlipSpacer>
-            <span className="text-2xl font-bold text-white/30">:</span>
-          </FlipSpacer>
-          <FlipColumn label="Min" display={pad2(value.mm)} onStep={stepMinutes} widthClass="w-14" />
-          <FlipSpacer>
-            <div className="h-12 w-px bg-white/10 mx-2" />
-          </FlipSpacer>
-          <FlipColumn label="Day" display={pad2(value.d)} onStep={stepDay} widthClass="w-14" />
-          <FlipColumn
-            label="Month"
-            display={MONTH_NAMES[value.m0]}
-            onStep={stepMonth}
-            widthClass="w-28"
-            textClass="text-sm uppercase tracking-wider"
-          />
-          <FlipColumn label="Year" display={String(value.y)} onStep={stepYear} widthClass="w-[4.5rem]" />
-        </div>
-
-        <div className="flex justify-end mt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-brand text-white hover:bg-brand-dark text-xs font-bold uppercase tracking-wider transition-colors"
-          >
-            Done
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DateTimeField({
+// Inline field: label + one always-visible flap row. No sub-popup — both
+// Start and End rows live directly in the modal, edited in place.
+function DateTimeFlipField({
   label, value, onChange,
 }: {
   label: string;
   value: string;
   onChange: (next: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const parts = splitLocal(value);
+  const set = (patch: Partial<DateTimeParts>) => {
+    const next = { ...parts, ...patch };
+    // Changing month/year can invalidate the day (e.g. 31 → February).
+    next.d = Math.min(next.d, daysInMonth(next.y, next.m0));
+    onChange(joinLocal(next));
+  };
+
+  const stepHours = (d: 1 | -1) => set({ hh: (parts.hh + d + 24) % 24 });
+  const stepMinutes = (d: 1 | -1) => set({ mm: (parts.mm + d + 60) % 60 });
+  const stepDay = (d: 1 | -1) => {
+    const n = daysInMonth(parts.y, parts.m0);
+    set({ d: ((parts.d - 1 + d + n) % n) + 1 });
+  };
+  const stepMonth = (d: 1 | -1) => set({ m0: (parts.m0 + d + 12) % 12 });
+  const stepYear = (d: 1 | -1) => set({ y: parts.y + d });
+
   return (
-    <>
+    <div className="mb-4">
       <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">{label}</label>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="w-full flex items-center justify-between gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10 focus:outline-none focus:border-brand/40 transition-colors cursor-pointer mb-4"
-      >
-        <span>{parts.d} {MONTH_NAMES[parts.m0]} {parts.y}</span>
-        <span className="text-brand font-semibold tabular-nums">{pad2(parts.hh)}:{pad2(parts.mm)}</span>
-      </button>
-      {open && (
-        <DateTimePickerModal
-          value={parts}
-          onChange={(next) => onChange(joinLocal(next))}
-          onClose={() => setOpen(false)}
+      <div className="flex items-center gap-1.5">
+        <FlipColumn label={`${label} hours`} display={pad2(parts.hh)} onStep={stepHours} widthClass="w-14" />
+        <FlipSpacer>
+          <span className="text-2xl font-bold text-white/30">:</span>
+        </FlipSpacer>
+        <FlipColumn label={`${label} minutes`} display={pad2(parts.mm)} onStep={stepMinutes} widthClass="w-14" />
+        <FlipSpacer>
+          <div className="h-12 w-px bg-white/10 mx-2" />
+        </FlipSpacer>
+        <FlipColumn label={`${label} day`} display={pad2(parts.d)} onStep={stepDay} widthClass="w-14" />
+        <FlipColumn
+          label={`${label} month`}
+          display={MONTH_NAMES[parts.m0]}
+          onStep={stepMonth}
+          widthClass="w-28"
+          textClass="text-sm uppercase tracking-wider"
         />
-      )}
-    </>
+        <FlipColumn label={`${label} year`} display={String(parts.y)} onStep={stepYear} widthClass="w-[4.5rem]" />
+      </div>
+    </div>
   );
 }
 
@@ -760,16 +716,16 @@ function EditEntryModal({
 
   return (
     <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-6">
+      <div className="w-full max-w-xl bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-6">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-bold text-white uppercase tracking-[0.2em]">Edit entry</h3>
           <button onClick={onClose} className="p-1 text-white/30 hover:text-white"><X size={14} /></button>
         </div>
         <p className="text-xs text-white/40 mb-5">{projectName}{entry.running ? ' · currently running' : ''}</p>
 
-        <DateTimeField label="Start" value={start} onChange={setStart} />
+        <DateTimeFlipField label="Start" value={start} onChange={setStart} />
 
-        <DateTimeField label="End" value={end} onChange={setEnd} />
+        <DateTimeFlipField label="End" value={end} onChange={setEnd} />
 
         {error && <div className="text-xs text-rose-400 mb-3">{error}</div>}
 
@@ -904,7 +860,7 @@ function AddEntryModal({ projects, onClose }: { projects: Project[]; onClose: ()
 
   return (
     <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-6">
+      <div className="w-full max-w-xl bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-6">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-bold text-white uppercase tracking-[0.2em]">Add record</h3>
           <button onClick={onClose} className="p-1 text-white/30 hover:text-white"><X size={14} /></button>
@@ -943,9 +899,9 @@ function AddEntryModal({ projects, onClose }: { projects: Project[]; onClose: ()
           ))}
         </select>
 
-        <DateTimeField label="Start" value={start} onChange={setStart} />
+        <DateTimeFlipField label="Start" value={start} onChange={setStart} />
 
-        <DateTimeField label="End" value={end} onChange={setEnd} />
+        <DateTimeFlipField label="End" value={end} onChange={setEnd} />
 
         {error && <div className="text-xs text-rose-400 mb-3">{error}</div>}
 
