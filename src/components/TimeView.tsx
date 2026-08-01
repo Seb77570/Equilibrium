@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, Clock, X, Plus, Volume2, VolumeX, Download } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -46,6 +46,18 @@ function addDays(d: Date, n: number): Date {
   r.setDate(r.getDate() + n);
   return r;
 }
+
+function addMonths(d: Date, n: number): Date {
+  // Land on day 1 — avoids the Jan 31 → Mar 3 skip and month view only
+  // cares about which month is displayed anyway.
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
+
+// Drag-to-create selections snap to 5 minutes.
+const DRAG_SNAP_MS = 5 * 60_000;
+// Seed values for the Add Record modal when opened from a drag selection
+// (or {} when opened from the toolbar button → the usual "last 10 min").
+interface AddSeed { projectPath?: string; startMs?: number; endMs?: number }
 
 // "datetime-local" input wants "YYYY-MM-DDTHH:mm" in LOCAL time, not UTC,
 // so we hand-build it from the components instead of using toISOString().
@@ -246,6 +258,75 @@ function DateTimeFlipField({
   );
 }
 
+// ── Month calendar view ────────────────────────────────────────────────────
+// Monday-first grid of the displayed month. Each day cell shows its total
+// tracked time; the cell background scales with hours worked (8h = full
+// intensity). Clicking a day jumps to its day view.
+function MonthGrid({
+  entries, date, now, onPickDay,
+}: {
+  entries: TimeEntry[];
+  date: Date;
+  now: number;
+  onPickDay: (d: Date) => void;
+}) {
+  const y = date.getFullYear();
+  const m0 = date.getMonth();
+
+  const totals = useMemo(() => {
+    const mStart = new Date(y, m0, 1).getTime();
+    const mEnd = new Date(y, m0 + 1, 1).getTime();
+    const per = new Map<number, number>();
+    for (const e of entries) {
+      const eEnd = e.running ? now : e.end_ms;
+      const s = Math.max(e.start_ms, mStart);
+      const en = Math.min(eEnd, mEnd);
+      if (en <= s) continue;
+      const day = new Date(s).getDate();
+      per.set(day, (per.get(day) ?? 0) + (en - s));
+    }
+    return per;
+  }, [entries, y, m0, now]);
+
+  const n = daysInMonth(y, m0);
+  const lead = (new Date(y, m0, 1).getDay() + 6) % 7;
+  const today = new Date(now);
+  const cells: (number | null)[] = [...Array<null>(lead).fill(null), ...Array.from({ length: n }, (_, i) => i + 1)];
+
+  return (
+    <div>
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5 text-[10px] uppercase tracking-widest text-white/30 font-bold">
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+          <div key={d} className="px-2">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1.5">
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`blank-${i}`} aria-hidden />;
+          const ms = totals.get(day) ?? 0;
+          const isToday = today.getFullYear() === y && today.getMonth() === m0 && today.getDate() === day;
+          // 8h ≈ full intensity — tuned so a normal workday reads clearly.
+          const intensity = ms > 0 ? 0.08 + 0.3 * Math.min(1, ms / (8 * 3_600_000)) : 0;
+          return (
+            <button
+              key={day}
+              onClick={() => onPickDay(new Date(y, m0, day))}
+              title="Open day view"
+              className={`h-20 rounded-lg border p-2 flex flex-col items-start justify-between text-left transition-colors cursor-pointer hover:border-brand/50 ${
+                isToday ? 'border-brand/60' : 'border-white/10'
+              }`}
+              style={{ backgroundColor: ms > 0 ? `rgba(14, 165, 233, ${intensity})` : 'rgba(255, 255, 255, 0.02)' }}
+            >
+              <span className={`text-xs font-bold ${isToday ? 'text-brand-light' : 'text-white/50'}`}>{day}</span>
+              {ms > 0 && <span className="font-mono tabular-nums text-sm text-white">{formatMinutes(ms)}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Same color used for the workspace's "active running" badge — visual link
 // between the running toggle on a card and the live block in this view.
 const RUNNING_BLOCK_CLASS = 'bg-amber-500/70 hover:bg-amber-500/85';
@@ -261,10 +342,14 @@ export default function TimeView() {
   const now = useNow(30_000);
 
   const [date, setDate] = useState<Date>(() => new Date());
+  const [view, setView] = useState<'day' | 'month'>('day');
   const [projects, setProjects] = useState<Project[]>([]);
   const [editing, setEditing] = useState<TimeEntry | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<AddSeed | null>(null);
   const [exporting, setExporting] = useState(false);
+  // Live drag-to-create selection on a day-view track (null = not dragging).
+  const [drag, setDrag] = useState<{ path: string | null; a: number; b: number } | null>(null);
+  const dragRef = useRef<{ path: string | null; a: number; b: number } | null>(null);
 
   useEffect(() => { load(); }, [load]);
 
@@ -351,6 +436,63 @@ export default function TimeView() {
     return { avg: days > 0 && total > 0 ? total / days : 0, days, hasData: total > 0, rows };
   }, [entries, date, now]);
 
+  // ── Drag-to-create ──────────────────────────────────────────────────────
+  // Press-and-drag on the empty part of a track (or the hour ruler) selects
+  // a time range; releasing opens Add Record pre-filled with that range and,
+  // when dragged on a project row, that project.
+  const msFromPointer = (clientX: number, el: HTMLElement): number => {
+    const rect = el.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return Math.round((dayStart + frac * (dayEnd - dayStart)) / DRAG_SNAP_MS) * DRAG_SNAP_MS;
+  };
+  const endDrag = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (!d) return;
+    const s = Math.min(d.a, d.b);
+    const e = Math.max(d.a, d.b);
+    if (e - s >= DRAG_SNAP_MS) {
+      setAdding({ projectPath: d.path ?? undefined, startMs: s, endMs: e });
+    }
+  };
+  // Spread onto any horizontal strip that maps to the full 24h day.
+  const dragProps = (path: string | null) => ({
+    onPointerDown: (ev: React.PointerEvent<HTMLDivElement>) => {
+      if (ev.button !== 0) return;
+      // Entry blocks are buttons — clicking them means "edit", not "select".
+      if ((ev.target as HTMLElement).closest('button')) return;
+      ev.currentTarget.setPointerCapture(ev.pointerId);
+      const ms = msFromPointer(ev.clientX, ev.currentTarget);
+      const d = { path, a: ms, b: ms };
+      dragRef.current = d;
+      setDrag(d);
+    },
+    onPointerMove: (ev: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragRef.current) return;
+      const ms = msFromPointer(ev.clientX, ev.currentTarget);
+      const d = { ...dragRef.current, b: ms };
+      dragRef.current = d;
+      setDrag(d);
+    },
+    onPointerUp: endDrag,
+    onPointerCancel: endDrag,
+  });
+  // Selection overlay for the strip identified by `path`.
+  const dragHighlight = (path: string | null) => {
+    if (!drag || drag.path !== path) return null;
+    const s = Math.min(drag.a, drag.b);
+    const e = Math.max(drag.a, drag.b);
+    if (e <= s) return null;
+    const dayMs = dayEnd - dayStart;
+    return (
+      <div
+        className="absolute top-0 bottom-0 bg-brand/30 border border-brand/60 rounded-sm pointer-events-none"
+        style={{ left: `${((s - dayStart) / dayMs) * 100}%`, width: `${((e - s) / dayMs) * 100}%` }}
+      />
+    );
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -370,10 +512,23 @@ export default function TimeView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex rounded-lg bg-white/5 p-0.5 mr-1">
+            {(['day', 'month'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-colors ${
+                  view === v ? 'bg-brand text-white' : 'text-white/50 hover:text-white'
+                }`}
+              >
+                {v === 'day' ? 'Day' : 'Month'}
+              </button>
+            ))}
+          </div>
           <button
-            onClick={() => setDate(d => addDays(d, -1))}
+            onClick={() => setDate(d => (view === 'day' ? addDays(d, -1) : addMonths(d, -1)))}
             className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-            title="Previous day"
+            title={view === 'day' ? 'Previous day' : 'Previous month'}
           >
             <ChevronLeft size={18} />
           </button>
@@ -387,9 +542,9 @@ export default function TimeView() {
             className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand/40"
           />
           <button
-            onClick={() => setDate(d => addDays(d, 1))}
+            onClick={() => setDate(d => (view === 'day' ? addDays(d, 1) : addMonths(d, 1)))}
             className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-            title="Next day"
+            title={view === 'day' ? 'Next day' : 'Next month'}
           >
             <ChevronRight size={18} />
           </button>
@@ -411,7 +566,7 @@ export default function TimeView() {
             Export
           </button>
           <button
-            onClick={() => setAdding(true)}
+            onClick={() => setAdding({})}
             className="flex items-center gap-2 px-4 py-1.5 bg-brand hover:bg-brand-light text-white rounded-lg transition-colors shadow-lg shadow-brand/20 text-xs font-bold uppercase tracking-wider"
             title="Add a time record manually"
           >
@@ -422,27 +577,47 @@ export default function TimeView() {
       </div>
 
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
-        <div className="text-sm text-white/40 capitalize">{fmtDateHuman(date)}</div>
+        <div className="text-sm text-white/40 capitalize">
+          {view === 'day' ? fmtDateHuman(date) : `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`}
+        </div>
         <SettingsStrip />
       </div>
 
+      {view === 'month' && (
+        <MonthGrid
+          entries={entries}
+          date={date}
+          now={now}
+          onPickDay={(d) => { setDate(d); setView('day'); }}
+        />
+      )}
+
+      {view === 'day' && (<>
       {/* Hour ruler. Spans the whole timeline width — same 24-col grid the
-          project rows use, so labels line up with the bar gridlines. */}
+          project rows use, so labels line up with the bar gridlines. Also a
+          drag-to-create strip (useful when the day has no rows yet). */}
       <div
-        className="grid text-[9px] text-white/25 font-mono mb-2"
-        style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
+        className="relative select-none touch-none cursor-crosshair mb-2"
+        title="Drag to add a record"
+        {...dragProps(null)}
       >
-        {Array.from({ length: 24 }, (_, h) => (
-          <div key={h} className="border-l border-white/5 pl-1 py-0.5">
-            {h.toString().padStart(2, '0')}h
-          </div>
-        ))}
+        <div
+          className="grid text-[9px] text-white/25 font-mono"
+          style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
+        >
+          {Array.from({ length: 24 }, (_, h) => (
+            <div key={h} className="border-l border-white/5 pl-1 py-0.5">
+              {h.toString().padStart(2, '0')}h
+            </div>
+          ))}
+        </div>
+        {dragHighlight(null)}
       </div>
 
       {/* Project rows */}
       {byProject.size === 0 ? (
         <div className="py-20 text-center text-white/30 italic">
-          No tracked time on this day. Click the ⏱ icon on a project to start.
+          No tracked time on this day. Click the ⏱ icon on a project to start, or drag on the ruler above to add a record.
         </div>
       ) : (
         <div className="space-y-4">
@@ -462,8 +637,13 @@ export default function TimeView() {
                 </div>
 
                 {/* Track — full row width. NOT overflow-hidden so the hover
-                    tooltip can extend above the row without being clipped. */}
-                <div className="relative h-8 bg-white/[0.03] border border-white/5 rounded">
+                    tooltip can extend above the row without being clipped.
+                    Dragging on the empty part selects a range to create an
+                    entry (pre-filled with this row's project). */}
+                <div
+                  className="relative h-8 bg-white/[0.03] border border-white/5 rounded select-none touch-none cursor-crosshair"
+                  {...dragProps(path)}
+                >
                   {/* Faint hour grid for visual alignment with the ruler. */}
                   {Array.from({ length: 23 }, (_, i) => (
                     <div
@@ -496,12 +676,14 @@ export default function TimeView() {
                       </button>
                     );
                   })}
+                  {dragHighlight(path)}
                 </div>
               </div>
             );
           })}
         </div>
       )}
+      </>)}
 
       {/* Day total + monthly average */}
       {(byProject.size > 0 || monthlyAvg.hasData) && (
@@ -540,10 +722,20 @@ export default function TimeView() {
               <span className="text-white/10 select-none">|</span>
             </>
           )}
-          {byProject.size > 0 && (
+          {view === 'day' && byProject.size > 0 && (
             <>
               <span className="text-white/40 uppercase tracking-widest text-[10px] font-bold">Total</span>
               <span className="font-mono tabular-nums text-white text-base font-bold">{formatMinutes(grandTotalMs)}</span>
+            </>
+          )}
+          {view === 'month' && monthlyAvg.hasData && (
+            <>
+              <span className="text-white/40 uppercase tracking-widest text-[10px] font-bold">
+                Total {MONTH_NAMES[date.getMonth()]}
+              </span>
+              <span className="font-mono tabular-nums text-white text-base font-bold">
+                {formatMinutes(monthlyAvg.rows.reduce((a, r) => a + r.total, 0))}
+              </span>
             </>
           )}
         </div>
@@ -564,7 +756,8 @@ export default function TimeView() {
       {adding && (
         <AddEntryModal
           projects={projects}
-          onClose={() => setAdding(false)}
+          initial={adding}
+          onClose={() => setAdding(null)}
         />
       )}
 
@@ -847,13 +1040,14 @@ function SettingsStrip() {
 // Free-form entry: pick any project, any date, any times. Default window is
 // "the last 10 minutes" because that's the most common case (forgot to start
 // the chrono before launching into work). All fields are editable.
-function AddEntryModal({ projects, onClose }: { projects: Project[]; onClose: () => void }) {
+function AddEntryModal({ projects, initial, onClose }: { projects: Project[]; initial?: AddSeed; onClose: () => void }) {
   const addManualEntry = useTimeStore((s) => s.addManualEntry);
   // Seed defaults on first render so the modal opens ready-to-save for the
-  // happy path (forgot to start a chrono 10 min ago).
-  const [projectPath, setProjectPath] = useState<string>(() => projects[0]?.path ?? '');
-  const [start, setStart] = useState<string>(() => toDatetimeLocal(Date.now() - 10 * 60_000));
-  const [end, setEnd] = useState<string>(() => toDatetimeLocal(Date.now()));
+  // happy path: a drag-to-create selection passes its range (and row project)
+  // via `initial`; the toolbar button seeds "the last 10 minutes".
+  const [projectPath, setProjectPath] = useState<string>(() => initial?.projectPath ?? projects[0]?.path ?? '');
+  const [start, setStart] = useState<string>(() => toDatetimeLocal(initial?.startMs ?? Date.now() - 10 * 60_000));
+  const [end, setEnd] = useState<string>(() => toDatetimeLocal(initial?.endMs ?? Date.now()));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [sections, setSections] = useState<ProjectSection[]>([]);
