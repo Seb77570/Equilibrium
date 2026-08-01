@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ChevronLeft, ChevronRight, Trash2, Clock, X, Plus, Volume2, VolumeX, Download } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -58,6 +58,262 @@ function toDatetimeLocal(ms: number): string {
 function parseDatetimeLocal(s: string): number | null {
   const ms = Date.parse(s);
   return Number.isNaN(ms) ? null : ms;
+}
+
+// ── Custom date-time picker ────────────────────────────────────────────────
+// Replaces the native datetime-local inputs: a day / month-name / year date
+// row plus a 24h clock dial (pick hours, then minutes — no AM/PM). The value
+// stays in the same "YYYY-MM-DDTHH:mm" local string the rest of the file
+// already parses, so callers don't change.
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const daysInMonth = (y: number, m0: number) => new Date(y, m0 + 1, 0).getDate();
+
+interface DateTimeParts { y: number; m0: number; d: number; hh: number; mm: number }
+
+function splitLocal(s: string): DateTimeParts {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(s);
+  if (!m) {
+    const now = new Date();
+    return { y: now.getFullYear(), m0: now.getMonth(), d: now.getDate(), hh: now.getHours(), mm: now.getMinutes() };
+  }
+  return { y: +m[1], m0: +m[2] - 1, d: +m[3], hh: +m[4], mm: +m[5] };
+}
+
+const joinLocal = (p: DateTimeParts) => `${p.y}-${pad2(p.m0 + 1)}-${pad2(p.d)}T${pad2(p.hh)}:${pad2(p.mm)}`;
+
+const PICKER_OPTION_CLASS = 'bg-[#18181b] text-white';
+const PICKER_SELECT_CLASS =
+  'bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-brand/40 cursor-pointer';
+
+// Dial geometry. Hours use two rings (outer 1-12, inner 13-23 + 00, like a
+// 24h Material dial); minutes use one ring with labels every 5.
+const DIAL_SIZE = 232;
+const DIAL_C = DIAL_SIZE / 2;
+const R_OUTER = 94;
+const R_INNER = 62;
+
+function dialPos(idx: number, total: number, r: number): { x: number; y: number } {
+  const a = (idx / total) * 2 * Math.PI - Math.PI / 2;
+  return { x: DIAL_C + r * Math.cos(a), y: DIAL_C + r * Math.sin(a) };
+}
+
+function DateTimePickerModal({
+  value, onChange, onClose,
+}: {
+  value: DateTimeParts;
+  onChange: (next: DateTimeParts) => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<'hours' | 'minutes'>('hours');
+  const dialRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+
+  const set = (patch: Partial<DateTimeParts>) => {
+    const next = { ...value, ...patch };
+    // Changing month/year can invalidate the day (e.g. 31 → February).
+    next.d = Math.min(next.d, daysInMonth(next.y, next.m0));
+    onChange(next);
+  };
+
+  // Shared pointer → value math so both click and drag select on the dial.
+  const applyPointer = (clientX: number, clientY: number) => {
+    const rect = dialRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const dx = clientX - rect.left - DIAL_C;
+    const dy = clientY - rect.top - DIAL_C;
+    const angle = (Math.atan2(dy, dx) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI);
+    if (mode === 'hours') {
+      const idx = Math.round(angle / (Math.PI / 6)) % 12;
+      const inner = Math.hypot(dx, dy) < (R_OUTER + R_INNER) / 2;
+      set({ hh: inner ? (idx === 0 ? 0 : idx + 12) : (idx === 0 ? 12 : idx) });
+    } else {
+      set({ mm: Math.round(angle / (Math.PI / 30)) % 60 });
+    }
+  };
+
+  const now = new Date();
+  const years: number[] = [];
+  for (let y = now.getFullYear() + 1; y >= now.getFullYear() - 6; y--) years.push(y);
+
+  const selectedHourPos = dialPos(value.hh % 12, 12, value.hh === 0 || value.hh > 12 ? R_INNER : R_OUTER);
+  const selectedMinutePos = dialPos(value.mm, 60, R_OUTER);
+  const hand = mode === 'hours' ? selectedHourPos : selectedMinutePos;
+
+  const hourButton = (h: number) => {
+    const inner = h === 0 || h > 12;
+    const p = dialPos(h % 12, 12, inner ? R_INNER : R_OUTER);
+    const selected = value.hh === h;
+    return (
+      <button
+        key={h}
+        type="button"
+        onClick={() => { set({ hh: h }); setMode('minutes'); }}
+        className={`absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full text-xs tabular-nums transition-colors cursor-pointer focus:outline-none ${
+          selected ? 'bg-brand text-white font-bold' : inner ? 'text-white/40 hover:bg-white/10' : 'text-white/80 hover:bg-white/10'
+        }`}
+        style={{ left: p.x, top: p.y }}
+      >
+        {pad2(h)}
+      </button>
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[400] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-5 w-[300px]">
+        {/* Date row: day first, month as text, then year. */}
+        <div className="flex gap-2 mb-5">
+          <select
+            value={value.d}
+            onChange={(e) => set({ d: +e.target.value })}
+            className={`${PICKER_SELECT_CLASS} w-16`}
+            aria-label="Day"
+          >
+            {Array.from({ length: daysInMonth(value.y, value.m0) }, (_, i) => (
+              <option key={i + 1} value={i + 1} className={PICKER_OPTION_CLASS}>{i + 1}</option>
+            ))}
+          </select>
+          <select
+            value={value.m0}
+            onChange={(e) => set({ m0: +e.target.value })}
+            className={`${PICKER_SELECT_CLASS} flex-1`}
+            aria-label="Month"
+          >
+            {MONTH_NAMES.map((name, i) => (
+              <option key={name} value={i} className={PICKER_OPTION_CLASS}>{name}</option>
+            ))}
+          </select>
+          <select
+            value={value.y}
+            onChange={(e) => set({ y: +e.target.value })}
+            className={`${PICKER_SELECT_CLASS} w-20`}
+            aria-label="Year"
+          >
+            {years.map((y) => (
+              <option key={y} value={y} className={PICKER_OPTION_CLASS}>{y}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Time display — each half is a mode switch. */}
+        <div className="flex items-center justify-center gap-1 mb-4 text-3xl font-bold tabular-nums">
+          <button
+            type="button"
+            onClick={() => setMode('hours')}
+            className={`px-2 py-0.5 rounded-lg transition-colors cursor-pointer ${mode === 'hours' ? 'bg-brand/15 text-brand' : 'text-white/50 hover:text-white'}`}
+          >
+            {pad2(value.hh)}
+          </button>
+          <span className="text-white/30">:</span>
+          <button
+            type="button"
+            onClick={() => setMode('minutes')}
+            className={`px-2 py-0.5 rounded-lg transition-colors cursor-pointer ${mode === 'minutes' ? 'bg-brand/15 text-brand' : 'text-white/50 hover:text-white'}`}
+          >
+            {pad2(value.mm)}
+          </button>
+        </div>
+
+        {/* Clock dial. */}
+        <div
+          ref={dialRef}
+          className="relative mx-auto rounded-full bg-white/5 select-none touch-none"
+          style={{ width: DIAL_SIZE, height: DIAL_SIZE }}
+          onPointerDown={(e) => {
+            draggingRef.current = true;
+            (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+            applyPointer(e.clientX, e.clientY);
+          }}
+          onPointerMove={(e) => { if (draggingRef.current) applyPointer(e.clientX, e.clientY); }}
+          onPointerUp={() => {
+            draggingRef.current = false;
+            if (mode === 'hours') setMode('minutes');
+          }}
+        >
+          <svg width={DIAL_SIZE} height={DIAL_SIZE} className="absolute inset-0 pointer-events-none text-brand">
+            <line x1={DIAL_C} y1={DIAL_C} x2={hand.x} y2={hand.y} stroke="currentColor" strokeWidth="2" />
+            <circle cx={DIAL_C} cy={DIAL_C} r="3" fill="currentColor" />
+            <circle cx={hand.x} cy={hand.y} r="15" fill="currentColor" opacity="0.25" />
+          </svg>
+          {mode === 'hours' ? (
+            <>
+              {Array.from({ length: 12 }, (_, i) => hourButton(i + 1))}
+              {Array.from({ length: 12 }, (_, i) => hourButton(i === 11 ? 0 : i + 13))}
+            </>
+          ) : (
+            Array.from({ length: 12 }, (_, i) => {
+              const m = i * 5;
+              const p = dialPos(m, 60, R_OUTER);
+              const selected = value.mm === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => set({ mm: m })}
+                  className={`absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full text-xs tabular-nums transition-colors cursor-pointer focus:outline-none ${
+                    selected ? 'bg-brand text-white font-bold' : 'text-white/80 hover:bg-white/10'
+                  }`}
+                  style={{ left: p.x, top: p.y }}
+                >
+                  {pad2(m)}
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div className="flex justify-end mt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-brand text-white hover:bg-brand-dark text-xs font-bold uppercase tracking-wider transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DateTimeField({
+  label, value, onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const parts = splitLocal(value);
+  return (
+    <>
+      <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center justify-between gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10 focus:outline-none focus:border-brand/40 transition-colors cursor-pointer mb-4"
+      >
+        <span>{parts.d} {MONTH_NAMES[parts.m0]} {parts.y}</span>
+        <span className="text-brand font-semibold tabular-nums">{pad2(parts.hh)}:{pad2(parts.mm)}</span>
+      </button>
+      {open && (
+        <DateTimePickerModal
+          value={parts}
+          onChange={(next) => onChange(joinLocal(next))}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
 }
 
 // Same color used for the workspace's "active running" badge — visual link
@@ -513,21 +769,9 @@ function EditEntryModal({
         </div>
         <p className="text-xs text-white/40 mb-5">{projectName}{entry.running ? ' · currently running' : ''}</p>
 
-        <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">Start</label>
-        <input
-          type="datetime-local"
-          value={start}
-          onChange={(e) => setStart(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/40 mb-4"
-        />
+        <DateTimeField label="Start" value={start} onChange={setStart} />
 
-        <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">End</label>
-        <input
-          type="datetime-local"
-          value={end}
-          onChange={(e) => setEnd(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/40 mb-2"
-        />
+        <DateTimeField label="End" value={end} onChange={setEnd} />
 
         {error && <div className="text-xs text-rose-400 mb-3">{error}</div>}
 
@@ -701,21 +945,9 @@ function AddEntryModal({ projects, onClose }: { projects: Project[]; onClose: ()
           ))}
         </select>
 
-        <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">Start</label>
-        <input
-          type="datetime-local"
-          value={start}
-          onChange={(e) => setStart(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/40 mb-4"
-        />
+        <DateTimeField label="Start" value={start} onChange={setStart} />
 
-        <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">End</label>
-        <input
-          type="datetime-local"
-          value={end}
-          onChange={(e) => setEnd(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/40 mb-2"
-        />
+        <DateTimeField label="End" value={end} onChange={setEnd} />
 
         {error && <div className="text-xs text-rose-400 mb-3">{error}</div>}
 
