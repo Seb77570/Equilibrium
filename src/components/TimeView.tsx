@@ -94,17 +94,22 @@ const joinLocal = (p: DateTimeParts) => `${p.y}-${pad2(p.m0 + 1)}-${pad2(p.d)}T$
 // globals.css) under a seam line across the middle of each tile.
 
 function FlipColumn({
-  label, display, onStep, widthClass, textClass = 'text-2xl tabular-nums',
+  label, display, onStep, onInput, widthClass, textClass = 'text-2xl tabular-nums',
 }: {
   label: string;
   display: string;
   onStep: (dir: 1 | -1) => void;
+  // Parses a typed value and applies it if valid; invalid input is ignored.
+  onInput: (raw: string) => void;
   widthClass: string;
   textClass?: string;
 }) {
   // Remember the last step direction so the flap animates the way it "rolls".
   const [dir, setDir] = useState<1 | -1>(1);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
   const step = (d: 1 | -1) => { setDir(d); onStep(d); };
+  const commit = () => { setEditing(false); onInput(draft.trim()); };
   return (
     <div className={`flex flex-col items-center gap-1 ${widthClass}`}>
       <button
@@ -116,14 +121,34 @@ function FlipColumn({
         <ChevronUp size={14} />
       </button>
       <div
-        onWheel={(e) => step(e.deltaY > 0 ? 1 : -1)}
-        className="relative w-full h-12 flex items-center justify-center bg-white/5 border border-white/10 rounded-lg overflow-hidden"
+        onWheel={(e) => { if (!editing) step(e.deltaY > 0 ? 1 : -1); }}
+        onClick={() => { if (!editing) { setDraft(display); setEditing(true); } }}
+        title={editing ? undefined : 'Click to type'}
+        className={`relative w-full h-12 flex items-center justify-center bg-white/5 border rounded-lg overflow-hidden ${
+          editing ? 'border-brand/50' : 'border-white/10 cursor-text'
+        }`}
       >
-        <span key={display} className={`block font-bold text-white ${textClass} ${dir === 1 ? 'flip-up' : 'flip-down'}`}>
-          {display}
-        </span>
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              else if (e.key === 'Escape') setEditing(false);
+            }}
+            aria-label={label}
+            className={`w-full bg-transparent text-center font-bold text-white ${textClass} focus:outline-none`}
+          />
+        ) : (
+          <span key={display} className={`block font-bold text-white ${textClass} ${dir === 1 ? 'flip-up' : 'flip-down'}`}>
+            {display}
+          </span>
+        )}
         {/* Flap seam — the split line across the middle of the tile. */}
-        <div className="absolute left-0 right-0 top-1/2 h-px bg-black/50 pointer-events-none" />
+        {!editing && <div className="absolute left-0 right-0 top-1/2 h-px bg-black/50 pointer-events-none" />}
       </div>
       <button
         type="button"
@@ -175,27 +200,47 @@ function DateTimeFlipField({
   const stepMonth = (d: 1 | -1) => set({ m0: (parts.m0 + d + 12) % 12 });
   const stepYear = (d: 1 | -1) => set({ y: parts.y + d });
 
+  // Typed-input parsers (one per column). Invalid input leaves the value
+  // unchanged. Month accepts a number (1-12) or a name prefix ("ju", "dec").
+  const inRange = (raw: string, min: number, max: number): number | null => {
+    if (!/^\d+$/.test(raw)) return null;
+    const n = parseInt(raw, 10);
+    return n >= min && n <= max ? n : null;
+  };
+  const inputHours = (raw: string) => { const n = inRange(raw, 0, 23); if (n !== null) set({ hh: n }); };
+  const inputMinutes = (raw: string) => { const n = inRange(raw, 0, 59); if (n !== null) set({ mm: n }); };
+  const inputDay = (raw: string) => { const n = inRange(raw, 1, 31); if (n !== null) set({ d: n }); };
+  const inputMonth = (raw: string) => {
+    const n = inRange(raw, 1, 12);
+    if (n !== null) { set({ m0: n - 1 }); return; }
+    const t = raw.toLowerCase();
+    const idx = MONTH_NAMES.findIndex((m) => m.toLowerCase().startsWith(t));
+    if (t && idx >= 0) set({ m0: idx });
+  };
+  const inputYear = (raw: string) => { const n = inRange(raw, 1970, 2100); if (n !== null) set({ y: n }); };
+
   return (
     <div className="mb-4">
       <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">{label}</label>
       <div className="flex items-center gap-1.5">
-        <FlipColumn label={`${label} hours`} display={pad2(parts.hh)} onStep={stepHours} widthClass="w-14" />
+        <FlipColumn label={`${label} hours`} display={pad2(parts.hh)} onStep={stepHours} onInput={inputHours} widthClass="w-14" />
         <FlipSpacer>
           <span className="text-2xl font-bold text-white/30">:</span>
         </FlipSpacer>
-        <FlipColumn label={`${label} minutes`} display={pad2(parts.mm)} onStep={stepMinutes} widthClass="w-14" />
+        <FlipColumn label={`${label} minutes`} display={pad2(parts.mm)} onStep={stepMinutes} onInput={inputMinutes} widthClass="w-14" />
         <FlipSpacer>
           <div className="h-12 w-px bg-white/10 mx-2" />
         </FlipSpacer>
-        <FlipColumn label={`${label} day`} display={pad2(parts.d)} onStep={stepDay} widthClass="w-14" />
+        <FlipColumn label={`${label} day`} display={pad2(parts.d)} onStep={stepDay} onInput={inputDay} widthClass="w-14" />
         <FlipColumn
           label={`${label} month`}
           display={MONTH_NAMES[parts.m0]}
           onStep={stepMonth}
+          onInput={inputMonth}
           widthClass="w-28"
           textClass="text-sm uppercase tracking-wider"
         />
-        <FlipColumn label={`${label} year`} display={String(parts.y)} onStep={stepYear} widthClass="w-[4.5rem]" />
+        <FlipColumn label={`${label} year`} display={String(parts.y)} onStep={stepYear} onInput={inputYear} widthClass="w-[4.5rem]" />
       </div>
     </div>
   );
