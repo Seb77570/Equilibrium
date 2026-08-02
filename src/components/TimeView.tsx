@@ -819,7 +819,9 @@ function ExportModal({ projects, onClose }: { projects: Project[]; onClose: () =
 
     const h = (ms: number) => (ms / 36e5).toFixed(2);
     const esc = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    const dayCol = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    // ISO date headers — "DD/MM" was ambiguous: US-locale Excel parsed
+    // "01/07" as January 7th and silently turned days 1-12 into wrong dates.
+    const dayCol = (d: Date) => fmtDateInput(d);
 
     const header = ['Projet', ...days.map(dayCol), 'Total'];
     const rows: string[][] = [];
