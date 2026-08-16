@@ -231,7 +231,19 @@ pub fn spawn_terminal(
                         log.extend_from_slice(&buf[..n]);
                         let overflow = log.len().saturating_sub(OUTPUT_LOG_CAP);
                         if overflow > 0 {
-                            log.drain(..overflow);
+                            // Never cut mid-line: extend the trim to the next
+                            // newline so a replayed buffer starts at a clean
+                            // boundary instead of inside an escape sequence or
+                            // a multi-byte character (which produced garbage
+                            // glyphs and cursor offsets on reconnect replays).
+                            let mut cut = overflow;
+                            while cut < log.len() && log[cut] != b'\n' {
+                                cut += 1;
+                            }
+                            if cut < log.len() {
+                                cut += 1; // drop the newline itself too
+                            }
+                            log.drain(..cut);
                         }
                     }
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();

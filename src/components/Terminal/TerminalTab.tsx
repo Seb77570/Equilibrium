@@ -241,14 +241,47 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
       }, 1500);
     };
 
+    // Whether spawn_terminal created a NEW session (true), reconnected to an
+    // existing one (false), or hasn't answered yet (null). The initial
+    // command must ONLY ever go to a brand-new session — after a frontend
+    // reload the module-level initialCommandsSent guard starts empty again,
+    // and re-typing e.g. `npm run dev` into a session that already ran it
+    // was exactly the "ghost command at a weird offset" bug.
+    let sessionIsNew: boolean | null = null;
+
     const sendInitialCommand = () => {
-      if (cancelled || !initialCommand || initialCommandsSent.has(id)) return;
+      if (cancelled || !initialCommand || sessionIsNew !== true || initialCommandsSent.has(id)) return;
       initialCommandsSent.add(id);
       if (quietTimer) { clearTimeout(quietTimer); quietTimer = undefined; }
       if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = undefined; }
       invoke('write_to_terminal', { id, data: initialCommand + '\r' })
         .then(() => log(`Initial command sent: ${initialCommand}`))
         .catch((e) => log(`Failed to send command: ${e}`, 'error'));
+    };
+
+    // Force ConPTY to repaint the entire visible screen with fresh absolute
+    // cursor positions: shrink by one column, then restore. Used ONLY after
+    // reconnect / buffer replay — the moments where ConPTY's idea of the
+    // screen and xterm's are out of sync (the source of offset artifacts).
+    // A single settled jiggle is safe for running TUIs (same as the user
+    // resizing the window by a pixel); it's the resize BURSTS during TUI
+    // startup that are dangerous, and this fires well after startup.
+    const jiggleResize = (why: string) => {
+      setTimeout(async () => {
+        if (cancelled) return;
+        try {
+          const r = entry.term.rows, c = entry.term.cols;
+          if (r < 2 || c < 20) return;
+          await invoke('resize_terminal', { id, rows: r, cols: c - 1 });
+          await new Promise((res) => setTimeout(res, 80));
+          await invoke('resize_terminal', { id, rows: r, cols: c });
+          entry.lastSentRows = r;
+          entry.lastSentCols = c;
+          log(`resize jiggle (${why}) — ConPTY full repaint forced at ${c}x${r}`);
+        } catch (e) {
+          log(`resize jiggle failed: ${e}`, 'warn');
+        }
+      }, 400);
     };
 
     // Focus on mount so the terminal is keyboard-ready immediately.
@@ -413,6 +446,31 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
             cols: initCols,
           });
           log(`step 3/4 — spawn_terminal returned isNew=${isNew}`);
+          sessionIsNew = isNew;
+
+          if (!isNew) {
+            // Reconnected to a PTY that survived a frontend reload: this
+            // xterm is brand-new and empty, but the shell lives on with its
+            // old screen state. Three consequences handled here:
+            // 1. permanently suppress the initial command for this session;
+            // 2. restore the visible history from the Rust rolling buffer;
+            // 3. jiggle the size so ConPTY repaints the live screen with
+            //    fresh absolute positions (fixes offset artifacts).
+            initialCommandsSent.add(id);
+            if (quietTimer) { clearTimeout(quietTimer); quietTimer = undefined; }
+            try {
+              const buffered = await invoke<string>('get_terminal_buffer', { id });
+              if (buffered && !cancelled) {
+                receivedOutput = true;
+                entry.term.write(buffered);
+                scheduleRepaint();
+                log(`reconnect — replayed ${buffered.length} chars of history`);
+              }
+            } catch (e) {
+              log(`reconnect history replay failed: ${e}`, 'warn');
+            }
+            jiggleResize('reconnect');
+          }
 
           if (isNew && initialCommand && !initialCommandsSent.has(id)) {
             log(`scheduling fallback initial command ('${initialCommand}') in 8s if shell stays silent`);
@@ -442,6 +500,7 @@ export default function TerminalTab({ id, shell, cwd, initialCommand, agentSessi
                   receivedOutput = true;
                   entry.term.write(buffered);
                   scheduleRepaint();
+                  jiggleResize('lost-prompt replay');
                   log('recovered dropped initial output via buffer replay', 'warn');
                   clearInterval(replayTimer);
                   replayTimer = undefined;
