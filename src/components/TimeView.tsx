@@ -350,6 +350,13 @@ export default function TimeView() {
   // Live drag-to-create selection on a day-view track (null = not dragging).
   const [drag, setDrag] = useState<{ path: string | null; a: number; b: number } | null>(null);
   const dragRef = useRef<{ path: string | null; a: number; b: number } | null>(null);
+  // Live edge-resize of a finished block (null = not resizing).
+  const [resize, setResize] = useState<{ id: string; startMs: number; endMs: number } | null>(null);
+  const resizeRef = useRef<{
+    id: string; side: 'l' | 'r'; entry: TimeEntry;
+    startMs: number; endMs: number;
+    min: number; max: number; rect: DOMRect; moved: boolean;
+  } | null>(null);
 
   useEffect(() => { load(); }, [load]);
 
@@ -478,6 +485,71 @@ export default function TimeView() {
     onPointerUp: endDrag,
     onPointerCancel: endDrag,
   });
+  // ── Edge resize (finished blocks only) ──────────────────────────────────
+  // Grabbing a block's left or right edge stretches/shrinks it, snapped to
+  // 5 minutes, clamped against the neighbouring blocks on the same row and
+  // the day bounds. The tooltip stays visible with live times while
+  // dragging; releasing persists via updateEntry.
+  const beginResize = (
+    ev: React.PointerEvent<HTMLElement>, e: TimeEntry, side: 'l' | 'r', list: TimeEntry[],
+  ) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    const track = (ev.currentTarget.parentElement as HTMLElement).parentElement as HTMLElement;
+    // Collision bounds from the same row's other entries.
+    let min = dayStart;
+    let max = dayEnd;
+    const eEnd = e.running ? now : e.end_ms;
+    for (const o of list) {
+      if (o.id === e.id) continue;
+      const oEnd = o.running ? now : o.end_ms;
+      if (oEnd <= e.start_ms && oEnd > min) min = oEnd;
+      if (o.start_ms >= eEnd && o.start_ms < max) max = o.start_ms;
+    }
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+    resizeRef.current = {
+      id: e.id, side, entry: e,
+      startMs: e.start_ms, endMs: e.end_ms,
+      min, max, rect: track.getBoundingClientRect(), moved: false,
+    };
+    setResize({ id: e.id, startMs: e.start_ms, endMs: e.end_ms });
+  };
+  const moveResize = (ev: React.PointerEvent<HTMLElement>) => {
+    const r = resizeRef.current;
+    if (!r) return;
+    const frac = Math.min(1, Math.max(0, (ev.clientX - r.rect.left) / r.rect.width));
+    let ms = Math.round((dayStart + frac * (dayEnd - dayStart)) / DRAG_SNAP_MS) * DRAG_SNAP_MS;
+    if (r.side === 'l') {
+      ms = Math.max(r.min, Math.min(ms, r.endMs - DRAG_SNAP_MS));
+      if (ms === r.startMs) return;
+      r.startMs = ms;
+    } else {
+      ms = Math.min(r.max, Math.max(ms, r.startMs + DRAG_SNAP_MS));
+      if (ms === r.endMs) return;
+      r.endMs = ms;
+    }
+    r.moved = true;
+    setResize({ id: r.id, startMs: r.startMs, endMs: r.endMs });
+  };
+  const endResize = async () => {
+    const r = resizeRef.current;
+    resizeRef.current = null;
+    setResize(null);
+    if (!r || !r.moved) return;
+    if (r.startMs !== r.entry.start_ms || r.endMs !== r.entry.end_ms) {
+      await updateEntry({ ...r.entry, start_ms: r.startMs, end_ms: r.endMs });
+    }
+  };
+  const resizeHandleProps = (e: TimeEntry, side: 'l' | 'r', list: TimeEntry[]) => ({
+    onPointerDown: (ev: React.PointerEvent<HTMLElement>) => beginResize(ev, e, side, list),
+    onPointerMove: moveResize,
+    onPointerUp: endResize,
+    onPointerCancel: endResize,
+    // A resize drag must not fall through to the block's "edit" click.
+    onClick: (ev: React.MouseEvent) => ev.stopPropagation(),
+  });
+
   // Selection overlay for the strip identified by `path`.
   const dragHighlight = (path: string | null) => {
     if (!drag || drag.path !== path) return null;
@@ -654,9 +726,13 @@ export default function TimeView() {
                     />
                   ))}
                   {list.map((e) => {
-                    const eEnd = e.running ? now : e.end_ms;
-                    const sClip = Math.max(e.start_ms, dayStart);
-                    const enClip = Math.min(eEnd, dayEnd);
+                    // While this block is being edge-resized, render the live
+                    // in-progress bounds instead of the stored ones.
+                    const isResizing = resize?.id === e.id;
+                    const rStart = isResizing ? resize.startMs : e.start_ms;
+                    const rEnd = isResizing ? resize.endMs : (e.running ? now : e.end_ms);
+                    const sClip = Math.max(rStart, dayStart);
+                    const enClip = Math.min(rEnd, dayEnd);
                     const dayMs = dayEnd - dayStart;
                     const left = ((sClip - dayStart) / dayMs) * 100;
                     const width = Math.max(0.3, ((enClip - sClip) / dayMs) * 100);
@@ -664,15 +740,28 @@ export default function TimeView() {
                       <button
                         key={e.id}
                         onClick={() => setEditing(e)}
-                        className={`group/block absolute top-0 bottom-0 rounded-sm transition-colors cursor-pointer ${e.running ? RUNNING_BLOCK_CLASS : FINISHED_BLOCK_CLASS}`}
+                        className={`group/block absolute top-0 bottom-0 rounded-sm cursor-pointer ${isResizing ? '' : 'transition-colors'} ${e.running ? RUNNING_BLOCK_CLASS : FINISHED_BLOCK_CLASS}`}
                         style={{ left: `${left}%`, width: `${width}%` }}
                       >
                         <BlockTooltip
                           name={projectName(e.project_path)}
-                          startMs={e.start_ms}
-                          endMs={eEnd}
+                          startMs={rStart}
+                          endMs={rEnd}
                           running={e.running}
+                          visible={isResizing}
                         />
+                        {!e.running && (
+                          <>
+                            <span
+                              {...resizeHandleProps(e, 'l', list)}
+                              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
+                            />
+                            <span
+                              {...resizeHandleProps(e, 'r', list)}
+                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
+                            />
+                          </>
+                        )}
                       </button>
                     );
                   })}
@@ -911,11 +1000,11 @@ function ExportModal({ projects, onClose }: { projects: Project[]; onClose: () =
 // showing and we want immediate feedback while scanning the timeline.
 // Positioned above the block, centered. `pointer-events-none` so it never
 // blocks clicks on adjacent blocks; the parent button keeps full hover area.
-function BlockTooltip({ name, startMs, endMs, running }: { name: string; startMs: number; endMs: number; running: boolean }) {
+function BlockTooltip({ name, startMs, endMs, running, visible = false }: { name: string; startMs: number; endMs: number; running: boolean; visible?: boolean }) {
   const fmt = (ms: number) =>
     new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return (
-    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-1.5 bg-black/95 border border-white/10 rounded-lg whitespace-nowrap opacity-0 group-hover/block:opacity-100 pointer-events-none transition-opacity z-50 shadow-[0_8px_24px_rgba(0,0,0,0.6)]">
+    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-1.5 bg-black/95 border border-white/10 rounded-lg whitespace-nowrap ${visible ? 'opacity-100' : 'opacity-0 group-hover/block:opacity-100'} pointer-events-none transition-opacity z-50 shadow-[0_8px_24px_rgba(0,0,0,0.6)]`}>
       <div className="text-[12px] font-semibold text-white">{name}</div>
       <div className="text-[10px] text-white/50 mt-0.5 flex items-center gap-2">
         <span>{fmt(startMs)} → {fmt(endMs)}</span>
