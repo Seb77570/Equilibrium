@@ -434,8 +434,6 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       <span className="w-[14px] shrink-0" />
                     )}
 
-                    <Terminal size={16} className="flex-shrink-0" />
-
                     {editingWorkspaceId === w.id ? (
                       <input
                         autoFocus
@@ -458,7 +456,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                         className="flex-1 bg-black/50 text-sm text-white px-1 outline-none border border-blue-500 rounded"
                       />
                     ) : (
-                      <span className="font-semibold text-sm truncate flex-1 select-none tracking-tight">{w.name}</span>
+                      <span className="font-semibold text-sm truncate flex-1 text-center select-none tracking-tight">{w.name}</span>
                     )}
 
                     {hasClaude && <AgentStatusDot working={anyWorking} unread={anyUnread} />}
