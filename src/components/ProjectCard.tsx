@@ -3,6 +3,7 @@ import { ExternalLink, Github, Folder, Cloud, GripVertical, Settings, Save, X, T
 import { invoke } from '@tauri-apps/api/core';
 import { useWorkspaceStore } from "@/app/store/workspaceStore";
 import { useTimeStore, entryDurationMs, formatMinutes, useNow } from "@/app/store/timeStore";
+import { DateTimeFlipField } from './DateTimeFlip';
 
 interface ProjectCardProps {
   name: string;
@@ -863,7 +864,7 @@ export function BackdateStartModal({ projectPath, onClose }: { projectPath: stri
       className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={(e) => { e.stopPropagation(); onClose(); }}
     >
-      <div className="w-full max-w-md bg-[#18181b] border border-white/10 rounded-[10px] shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-xl bg-[#18181b] border border-white/10 rounded-[10px] shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-bold text-white uppercase tracking-[0.2em]">Backdate start</h3>
           <button onClick={onClose} className="p-1 text-white/30 hover:text-white"><X size={14} /></button>
@@ -872,13 +873,7 @@ export function BackdateStartModal({ projectPath, onClose }: { projectPath: stri
           Start the chrono at a past time and keep tracking live until you stop it.
         </p>
 
-        <label className="block text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">Started at</label>
-        <input
-          type="datetime-local"
-          value={start}
-          onChange={(e) => setStart(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-brand/40 mb-2"
-        />
+        <DateTimeFlipField label="Started at" value={start} onChange={setStart} />
         <p className="text-[11px] text-white/35 mb-2">≈ {formatMinutes(elapsedMin * 60_000)} ago — counting continues from here.</p>
 
         {error && <div className="text-xs text-rose-400 mb-3">{error}</div>}
