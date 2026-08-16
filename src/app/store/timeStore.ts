@@ -53,8 +53,20 @@ function playIdleBeep(): void {
   }
 }
 
+// One undoable time modification. Only DELIBERATE edits are recorded (manual
+// add, entry update/resize, delete) — chrono start/stop and the minute
+// checkpoints are not, so undo never fights the live tracker.
+export type TimeOp =
+  | { type: 'add'; entry: TimeEntry }
+  | { type: 'update'; before: TimeEntry; after: TimeEntry }
+  | { type: 'delete'; entry: TimeEntry };
+
+const UNDO_CAP = 50;
+
 interface TimeState {
   entries: TimeEntry[];
+  undoStack: TimeOp[];
+  redoStack: TimeOp[];
   // projectPath → entryId for the currently running entry on that project.
   // Source of truth for "is this project being tracked right now?".
   running: Record<string, string>;
@@ -73,6 +85,10 @@ interface TimeState {
   addManualEntry: (e: { projectPath: string; startMs: number; endMs: number }) => Promise<void>;
   updateEntry: (entry: TimeEntry) => Promise<void>;
   deleteEntry: (id: string) => Promise<void>;
+  // Undo/redo the last deliberate modification. Resolve to the op that was
+  // reverted/reapplied (for UI feedback), or null if the stack was empty.
+  undo: () => Promise<TimeOp | null>;
+  redo: () => Promise<TimeOp | null>;
   registerActivity: () => void;
   checkpointTick: () => void;
   idleCheckTick: () => void;
@@ -83,8 +99,33 @@ function genId(): string {
   return `time-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export const useTimeStore = create<TimeState>((set, get) => ({
+export const useTimeStore = create<TimeState>((set, get) => {
+  // Record a new op: caps the stack and clears redo (a fresh edit forks
+  // history, same convention as every editor).
+  const pushOp = (op: TimeOp) =>
+    set((s) => ({ undoStack: [...s.undoStack.slice(-(UNDO_CAP - 1)), op], redoStack: [] }));
+
+  // Upsert an entry back into state + disk. Restored entries are always
+  // running:false — undo restores time bounds, never chrono state.
+  const restoreEntry = async (entry: TimeEntry) => {
+    const e = { ...entry, running: false };
+    set((s) => ({
+      entries: s.entries.some((x) => x.id === e.id)
+        ? s.entries.map((x) => (x.id === e.id ? e : x))
+        : [...s.entries, e],
+    }));
+    await invoke('time_entry_save', { entry: e });
+  };
+
+  const removeEntry = async (id: string) => {
+    set((s) => ({ entries: s.entries.filter((e) => e.id !== id) }));
+    await invoke('time_entry_delete', { id });
+  };
+
+  return {
   entries: [],
+  undoStack: [],
+  redoStack: [],
   running: {},
   lastActivity: Date.now(),
   loaded: false,
@@ -193,6 +234,7 @@ export const useTimeStore = create<TimeState>((set, get) => ({
       running: false,
     };
     set((s) => ({ entries: [...s.entries, entry] }));
+    pushOp({ type: 'add', entry });
     try {
       await invoke('time_entry_save', { entry });
     } catch (e) {
@@ -201,7 +243,9 @@ export const useTimeStore = create<TimeState>((set, get) => ({
   },
 
   updateEntry: async (entry) => {
+    const before = get().entries.find((e) => e.id === entry.id);
     set((s) => ({ entries: s.entries.map((e) => (e.id === entry.id ? entry : e)) }));
+    if (before) pushOp({ type: 'update', before, after: entry });
     try {
       await invoke('time_entry_save', { entry });
     } catch (e) {
@@ -210,12 +254,42 @@ export const useTimeStore = create<TimeState>((set, get) => ({
   },
 
   deleteEntry: async (id) => {
+    const before = get().entries.find((e) => e.id === id);
     set((s) => ({ entries: s.entries.filter((e) => e.id !== id) }));
+    if (before) pushOp({ type: 'delete', entry: before });
     try {
       await invoke('time_entry_delete', { id });
     } catch (e) {
       console.error('[timeStore] delete failed:', e);
     }
+  },
+
+  undo: async () => {
+    const op = get().undoStack[get().undoStack.length - 1];
+    if (!op) return null;
+    set((s) => ({ undoStack: s.undoStack.slice(0, -1), redoStack: [...s.redoStack, op] }));
+    try {
+      if (op.type === 'add') await removeEntry(op.entry.id);
+      else if (op.type === 'update') await restoreEntry(op.before);
+      else await restoreEntry(op.entry);
+    } catch (e) {
+      console.error('[timeStore] undo failed:', e);
+    }
+    return op;
+  },
+
+  redo: async () => {
+    const op = get().redoStack[get().redoStack.length - 1];
+    if (!op) return null;
+    set((s) => ({ redoStack: s.redoStack.slice(0, -1), undoStack: [...s.undoStack, op] }));
+    try {
+      if (op.type === 'add') await restoreEntry(op.entry);
+      else if (op.type === 'update') await restoreEntry(op.after);
+      else await removeEntry(op.entry.id);
+    } catch (e) {
+      console.error('[timeStore] redo failed:', e);
+    }
+    return op;
   },
 
   registerActivity: () => {
@@ -263,7 +337,8 @@ export const useTimeStore = create<TimeState>((set, get) => ({
       console.error('[timeStore] updateSettings failed:', e);
     }
   },
-}));
+  };
+});
 
 // ── Display helpers ────────────────────────────────────────────────────────
 

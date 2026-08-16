@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ChevronLeft, ChevronRight, Trash2, Clock, X, Plus, Volume2, VolumeX, Download } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
-import { TimeEntry, useTimeStore, entryDurationMs, formatMinutes, useNow } from '@/app/store/timeStore';
+import { TimeEntry, TimeOp, useTimeStore, entryDurationMs, formatMinutes, useNow } from '@/app/store/timeStore';
+import { useWorkspaceStore } from '@/app/store/workspaceStore';
 import { DateTimeFlipField, MONTH_NAMES, daysInMonth } from './DateTimeFlip';
 
 interface Project {
@@ -152,6 +153,9 @@ export default function TimeView() {
   const load = useTimeStore((s) => s.load);
   const updateEntry = useTimeStore((s) => s.updateEntry);
   const deleteEntry = useTimeStore((s) => s.deleteEntry);
+  const undoOp = useTimeStore((s) => s.undo);
+  const redoOp = useTimeStore((s) => s.redo);
+  const activeView = useWorkspaceStore((s) => s.activeView);
 
   // Rerender once per minute so live (running) blocks grow visibly.
   const now = useNow(30_000);
@@ -178,6 +182,41 @@ export default function TimeView() {
   useEffect(() => {
     invoke<Project[]>('get_projects').then(setProjects).catch(() => {});
   }, []);
+
+  // Ctrl+Z / Ctrl+Shift+Z — undo/redo the last time modification. Deliberately
+  // narrow: TimeView stays mounted (just hidden) when another view is active,
+  // so we gate on activeView === 'time' to make an accidental Ctrl+Z from the
+  // dashboard or a workspace impossible. Also inert while typing in an input
+  // or while a modal is open, and every action shows a confirmation toast so
+  // nothing changes silently.
+  const [undoToast, setUndoToast] = useState<string | null>(null);
+  const undoToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (activeView !== 'time') return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.key.toLowerCase() !== 'z') return;
+      const t = ev.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (editing || adding || exporting) return;
+      ev.preventDefault();
+      const isRedo = ev.shiftKey;
+      (isRedo ? redoOp() : undoOp()).then((op: TimeOp | null) => {
+        const fmt = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const describe = (e: TimeEntry, verb: string) =>
+          `${verb} — ${e.project_path.split(/[\\/]/).pop()} · ${fmt(e.start_ms)}–${fmt(e.end_ms)}`;
+        let msg: string;
+        if (!op) msg = isRedo ? 'Nothing to redo' : 'Nothing to undo';
+        else if (op.type === 'add') msg = isRedo ? describe(op.entry, 'Redo: entry re-added') : describe(op.entry, 'Undo: entry removed');
+        else if (op.type === 'update') msg = isRedo ? describe(op.after, 'Redo: change reapplied') : describe(op.before, 'Undo: change reverted');
+        else msg = isRedo ? describe(op.entry, 'Redo: entry deleted') : describe(op.entry, 'Undo: entry restored');
+        setUndoToast(msg);
+        if (undoToastTimer.current) clearTimeout(undoToastTimer.current);
+        undoToastTimer.current = setTimeout(() => setUndoToast(null), 3000);
+      });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeView, editing, adding, exporting, undoOp, redoOp]);
 
   const { start: dayStart, end: dayEnd } = dayBounds(date);
   const isToday = useMemo(() => {
@@ -671,6 +710,13 @@ export default function TimeView() {
           projects={projects}
           onClose={() => setExporting(false)}
         />
+      )}
+
+      {/* Undo/redo confirmation toast — undoing must never be silent. */}
+      {undoToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-4 py-2 bg-black/95 border border-white/10 rounded-lg text-xs text-white shadow-[0_8px_24px_rgba(0,0,0,0.6)] pointer-events-none">
+          {undoToast}
+        </div>
       )}
     </div>
   );
