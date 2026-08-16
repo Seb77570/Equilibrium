@@ -404,8 +404,15 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       project look colored). */}
                   <div
                     onClick={() => {
-                      setActiveWorkspace(w.id);
-                      onNavigate('workspaces');
+                      // No chevron anymore: first click activates + navigates;
+                      // re-clicking the already-active workspace toggles its
+                      // conversation list instead.
+                      if (isActive && hasClaude) {
+                        toggleExpanded(w.id);
+                      } else {
+                        setActiveWorkspace(w.id);
+                        onNavigate('workspaces');
+                      }
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -422,18 +429,6 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                   >
                     {/* Line 1 — the name gets the full width. */}
                     <div className="flex items-center gap-2">
-                    {hasClaude ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleExpanded(w.id); }}
-                        className="p-0.5 -ml-1 text-white/40 hover:text-white shrink-0"
-                        title={expanded ? 'Collapse' : 'Expand conversations'}
-                      >
-                        <ChevronRight size={14} className={`transition-transform ${expanded ? 'rotate-90' : ''}`} />
-                      </button>
-                    ) : (
-                      <span className="w-[14px] shrink-0" />
-                    )}
-
                     {editingWorkspaceId === w.id ? (
                       <input
                         autoFocus
