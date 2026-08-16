@@ -19,6 +19,19 @@ const SUB_TAB_COLOR_CLASSES: Record<Exclude<TabColor, 'default'>, { active: stri
   cyan:   { active: 'bg-cyan-500/40 text-cyan-50',     inactive: 'bg-cyan-500/10 text-cyan-100/70 hover:bg-cyan-500/20 hover:text-cyan-50' },
 };
 
+// Small right-side dot shown on the ACTIVE conversation row when the tab has
+// a custom color — the active row itself always wears the blue gradient, so
+// the tab color is carried by this dot instead of the row background.
+const TAB_COLOR_DOT: Record<Exclude<TabColor, 'default'>, string> = {
+  green: 'bg-emerald-400',
+  red: 'bg-rose-400',
+  pink: 'bg-pink-400',
+  blue: 'bg-blue-400',
+  orange: 'bg-orange-400',
+  purple: 'bg-violet-400',
+  cyan: 'bg-cyan-400',
+};
+
 // Return the pane node containing a given tab id (or null), so we can check
 // whether that pane currently has the tab activated — i.e. the user is
 // actually looking at this tab right now. A workspace with split panes can
@@ -472,9 +485,16 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                           activeView === 'workspaces' &&
                           activeWorkspaceId === w.id;
                         const color = t.color && t.color !== 'default' ? t.color : null;
-                        const rowClass = color
-                          ? (isTabActive ? SUB_TAB_COLOR_CLASSES[color].active : SUB_TAB_COLOR_CLASSES[color].inactive)
-                          : (isTabActive ? 'bg-white/10 text-white' : 'text-white/35 hover:text-white hover:bg-white/5');
+                        // The ACTIVE conversation always wears the same blue
+                        // gradient as the active workspace pill — a custom tab
+                        // color is demoted to a small dot on the right so the
+                        // "you are here" blue stays unmistakable. Inactive
+                        // rows keep their tinted/plain treatment.
+                        const rowClass = isTabActive
+                          ? 'bg-gradient-to-r from-sky-900 to-cyan-900 text-sky-50'
+                          : color
+                            ? SUB_TAB_COLOR_CLASSES[color].inactive
+                            : 'text-white/35 hover:text-white hover:bg-white/5';
                         return (
                           <div
                             key={t.id}
@@ -484,8 +504,11 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                           >
                             {/* Sparkles inherits the row text color when the
                                 row is tinted, so it matches the highlight. */}
-                            <Sparkles size={10} className={`shrink-0 ${color ? 'opacity-80' : 'text-violet-300/50'}`} />
+                            <Sparkles size={10} className={`shrink-0 ${color || isTabActive ? 'opacity-80' : 'text-violet-300/50'}`} />
                             <span className="truncate flex-1">{t.title}</span>
+                            {isTabActive && color && (
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${TAB_COLOR_DOT[color]}`} title={`Tab color: ${color}`} />
+                            )}
                             <AgentStatusDot working={working} unread={unread} size={6} />
                           </div>
                         );
