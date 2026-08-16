@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, Keyboard, ChevronRight, Loader2, Sparkles, Clock, Pause } from "lucide-react";
+import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, Keyboard, ChevronRight, History, Loader2, Sparkles, Clock, Pause } from "lucide-react";
 import { useState, useEffect } from 'react';
 import { useWorkspaceStore, Workspace, LayoutNode, TabConfig, TabColor } from '@/app/store/workspaceStore';
 import { useTimeStore } from '@/app/store/timeStore';
@@ -31,6 +31,19 @@ const TAB_COLOR_DOT: Record<Exclude<TabColor, 'default'>, string> = {
   purple: 'bg-violet-400',
   cyan: 'bg-cyan-400',
 };
+
+// Swatches for the right-click color picker on conversation rows — same set
+// as TabPane's tab color menu so both entry points feel identical.
+const COLOR_SWATCHES: { value: TabColor; label: string; dot: string }[] = [
+  { value: 'default', label: 'Default', dot: 'bg-white/20' },
+  { value: 'green',   label: 'Green',   dot: 'bg-emerald-500' },
+  { value: 'red',     label: 'Red',     dot: 'bg-rose-500' },
+  { value: 'pink',    label: 'Pink',    dot: 'bg-pink-400' },
+  { value: 'blue',    label: 'Blue',    dot: 'bg-blue-500' },
+  { value: 'orange',  label: 'Orange',  dot: 'bg-orange-500' },
+  { value: 'purple',  label: 'Purple',  dot: 'bg-violet-500' },
+  { value: 'cyan',    label: 'Cyan',    dot: 'bg-cyan-500' },
+];
 
 // Return the pane node containing a given tab id (or null), so we can check
 // whether that pane currently has the tab activated — i.e. the user is
@@ -80,7 +93,9 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
-  const { workspaces, activeWorkspaceId, setActiveWorkspace, addWorkspace, removeWorkspace, renameWorkspace, projectStatuses, agentStatus, agentUnread, setActiveTab, renameTab } = useWorkspaceStore();
+  const { workspaces, activeWorkspaceId, setActiveWorkspace, addWorkspace, removeWorkspace, renameWorkspace, projectStatuses, agentStatus, agentUnread, setActiveTab, renameTab, setTabColor } = useWorkspaceStore();
+  // Right-click color picker for a conversation row (mirrors TabPane's).
+  const [convColorMenu, setConvColorMenu] = useState<{ wId: string; tabId: string; top: number; left: number } | null>(null);
   // Workspaces are expanded by default; we track the ones the user collapsed.
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set());
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -398,13 +413,15 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       setEditingName(w.name);
                     }}
                     className={`
-                      flex items-center gap-2 px-2.5 py-2 rounded-lg border
+                      px-2.5 py-2 rounded-lg border
                       transition-all duration-200 cursor-pointer group
                       ${isActive
                         ? "bg-gradient-to-r from-sky-900 to-cyan-900 border-sky-700/50 text-sky-50 shadow-lg"
                         : "bg-surface-hi border-line text-ink-dim hover:border-sky-700/50 hover:text-ink"}
                     `}
                   >
+                    {/* Line 1 — the name gets the full width. */}
+                    <div className="flex items-center gap-2">
                     {hasClaude ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleExpanded(w.id); }}
@@ -445,26 +462,14 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                     )}
 
                     {hasClaude && <AgentStatusDot working={anyWorking} unread={anyUnread} />}
+                    </div>
 
-                    {/* Time-tracking toggle. Only shown for workspaces bound
-                        to a project (metadata.projectPath) — blank workspaces
-                        have nothing to track. Visible by default when the
-                        chrono is running (= persistent ambre cue, your
-                        "I'm being tracked" indicator); subtle and hover-only
-                        when idle, so it doesn't clutter quiet rows. */}
-                    {w.metadata?.projectPath && (
-                      <WorkspaceChronoToggle
-                        projectPath={w.metadata.projectPath}
-                        workspaceActive={isActive}
-                      />
-                    )}
-
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeWorkspace(w.id); }}
-                      className={`p-1 rounded-md text-white/30 hover:text-red-400 hover:bg-white/10 transition-all shrink-0 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                    >
-                      <X size={14} />
-                    </button>
+                    {/* Line 2 — segmented action bar: chrono · backdate · close. */}
+                    <WorkspaceActionBar
+                      projectPath={w.metadata?.projectPath}
+                      isActive={isActive}
+                      onClose={() => removeWorkspace(w.id)}
+                    />
                   </div>
 
                   {hasClaude && expanded && (
@@ -499,6 +504,12 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                           <div
                             key={t.id}
                             onClick={() => openClaudeTab(w, t)}
+                            onContextMenu={(e) => {
+                              // Right-click → color picker, same as tabs.
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setConvColorMenu({ wId: w.id, tabId: t.id, top: e.clientY + 4, left: e.clientX });
+                            }}
                             title={t.title}
                             className={`flex items-center gap-2 px-2 py-1 rounded-lg text-[11px] font-normal cursor-pointer transition-colors ${rowClass}`}
                           >
@@ -587,6 +598,38 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
           </div>
         </div>
       )}
+
+      {/* ── Conversation color picker (right-click on a sidebar conv) ───── */}
+      {convColorMenu && (
+        <>
+          <div className="fixed inset-0 z-[150]" onClick={() => setConvColorMenu(null)} />
+          <div
+            className="fixed bg-[#18181b] border border-white/10 shadow-2xl rounded-lg p-1.5 z-[200]"
+            style={{ top: convColorMenu.top, left: convColorMenu.left }}
+          >
+            <div className="flex items-center gap-1">
+              {COLOR_SWATCHES.map(({ value, label, dot }) => {
+                const current =
+                  workspaces.find((ws) => ws.id === convColorMenu.wId)?.allTabs[convColorMenu.tabId]?.color ?? 'default';
+                const selected = current === value;
+                return (
+                  <button
+                    key={value}
+                    title={label}
+                    onClick={() => {
+                      setTabColor(convColorMenu.wId, convColorMenu.tabId, value);
+                      setConvColorMenu(null);
+                    }}
+                    className={`w-6 h-6 rounded-full ${dot} transition-all hover:scale-110 ${
+                      selected ? 'ring-2 ring-white/80 ring-offset-1 ring-offset-[#18181b]' : 'ring-1 ring-white/10'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </aside>
   );
 }
@@ -608,35 +651,63 @@ function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNo
   );
 }
 
-// Compact chrono toggle pinned to the workspace row in the sidebar. Subscribes
-// only to the boolean "is this project running?", so flipping unrelated
-// chronos doesn't re-render every row.
-function WorkspaceChronoToggle({ projectPath, workspaceActive }: { projectPath: string; workspaceActive: boolean }) {
-  const isRunning = useTimeStore((s) => !!s.running[projectPath]);
+
+// Segmented action bar under the workspace name: three equal sections filling
+// the pill width — chrono toggle, backdate-start, close. Always visible for
+// the active workspace or while its chrono runs (the amber cue must never
+// hide); hover-revealed on quiet rows so the list stays compact. Workspaces
+// without a bound project only get the close section. Subscribes only to the
+// boolean "is this project running?", so flipping unrelated chronos doesn't
+// re-render every row.
+function WorkspaceActionBar({ projectPath, isActive, onClose }: { projectPath?: string; isActive: boolean; onClose: () => void }) {
+  const isRunning = useTimeStore((s) => (projectPath ? !!s.running[projectPath] : false));
   const toggle = useTimeStore((s) => s.toggle);
   const [backdating, setBackdating] = useState(false);
+  const visible = isActive || isRunning;
+  const base = 'flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer';
   return (
     <>
-      <button
-        onClick={(e) => { e.stopPropagation(); toggle(projectPath); }}
-        // Right-click an idle chrono = backdate the start ("I began earlier and
-        // I'm still going"). Mirrors ProjectCard's ChronoToggle.
-        onContextMenu={(e) => {
-          if (isRunning) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setBackdating(true);
-        }}
-        title={isRunning ? 'Tracking time · click to stop' : 'Start tracking · right-click to backdate the start'}
-        className={`p-1 rounded-md transition-all shrink-0 ${
-          isRunning
-            ? 'opacity-100 text-amber-300 bg-amber-500/15 hover:bg-amber-500/25'
-            : `text-white/30 hover:text-amber-300 hover:bg-white/10 ${workspaceActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
-        }`}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        className={`${visible ? 'grid' : 'hidden group-hover:grid'} ${projectPath ? 'grid-cols-3' : 'grid-cols-1'} gap-1 mt-2`}
       >
-        {isRunning ? <Pause size={12} /> : <Clock size={12} />}
-      </button>
-      {backdating && (
+        {projectPath && (
+          <button
+            onClick={() => toggle(projectPath)}
+            title={isRunning ? 'Tracking time · click to stop' : 'Start tracking'}
+            className={`${base} ${
+              isRunning
+                ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
+                : 'bg-black/20 text-white/50 hover:bg-black/40 hover:text-amber-300'
+            }`}
+          >
+            {isRunning ? <Pause size={13} /> : <Clock size={13} />}
+          </button>
+        )}
+        {projectPath && (
+          <button
+            onClick={() => { if (!isRunning) setBackdating(true); }}
+            disabled={isRunning}
+            title={isRunning ? 'Already tracking' : 'Backdate start — begin at a past time and keep tracking'}
+            className={`${base} ${
+              isRunning
+                ? 'bg-black/10 text-white/20 cursor-default'
+                : 'bg-black/20 text-white/50 hover:bg-black/40 hover:text-amber-300'
+            }`}
+          >
+            <History size={13} />
+          </button>
+        )}
+        <button
+          onClick={onClose}
+          title="Close workspace"
+          className={`${base} bg-black/20 text-white/50 hover:bg-black/40 hover:text-red-400`}
+        >
+          <X size={13} />
+        </button>
+      </div>
+      {backdating && projectPath && (
         <BackdateStartModal projectPath={projectPath} onClose={() => setBackdating(false)} />
       )}
     </>
