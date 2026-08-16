@@ -70,6 +70,28 @@ pub async fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), 
     fs::write(settings_path, content).map_err(|e| e.to_string())
 }
 
+// ── Workspace session persistence ───────────────────────────────────────────
+// Backing store for the frontend's zustand `persist` (open workspaces, tab
+// layout, Claude session ids…). It used to live in localStorage, but release
+// builds serve the UI from http://localhost:<random port> — a DIFFERENT
+// origin (hence an empty localStorage) on every launch, so restore silently
+// never worked in installed builds. A file in the app-data dir is
+// origin-independent and survives everything.
+#[tauri::command]
+pub fn session_load(app: AppHandle) -> Result<Option<String>, String> {
+    let path = config_file(&app, "workspace_session.json")?;
+    match fs::read_to_string(path) {
+        Ok(s) if !s.trim().is_empty() => Ok(Some(s)),
+        _ => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub fn session_save(app: AppHandle, value: String) -> Result<(), String> {
+    let path = config_file(&app, "workspace_session.json")?;
+    fs::write(path, value).map_err(|e| e.to_string())
+}
+
 // The project registry lives in the app data dir alongside settings.json /
 // dashboard.json. It is the single source of truth for which projects exist:
 // folders are added explicitly (no more scanning), and all metadata is stored

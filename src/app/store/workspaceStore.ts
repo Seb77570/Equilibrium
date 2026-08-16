@@ -497,13 +497,44 @@ export const useWorkspaceStore = create<WorkspaceState>()(persist((set, get) => 
   // deliberately excluded — it's rebuilt from scratch as terminals re-spawn.
   name: 'equilibrium-workspace-session',
   version: 1,
-  // SSR/build-safe: Next.js prerenders this in Node where localStorage is
-  // undefined. Fall back to a no-op store there; the real one is used in the
-  // Tauri webview at runtime.
+  // File-backed via Rust, NOT localStorage. localStorage is scoped to the
+  // page origin INCLUDING the port, and release builds serve the UI from
+  // http://localhost:<random port> — a different (empty) storage bucket on
+  // every launch, which is why session restore silently never worked in
+  // installed builds. The session JSON now lives in the app-data dir next to
+  // the rest of the config. getItem falls back to localStorage once so an
+  // existing dev session migrates instead of vanishing.
+  // SSR/build-safe: Next.js prerenders this in Node where window/invoke are
+  // undefined — a no-op store is used there; the real one runs in the webview.
   storage: createJSONStorage(() =>
     typeof window !== 'undefined'
-      ? window.localStorage
-      : { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+      ? {
+          getItem: async (name: string): Promise<string | null> => {
+            try {
+              const fromFile = await invoke<string | null>('session_load');
+              if (fromFile) return fromFile;
+            } catch (e) {
+              console.error('[workspaceStore] session_load failed:', e);
+            }
+            // One-time migration path from the pre-file localStorage era.
+            return window.localStorage.getItem(name);
+          },
+          setItem: async (_name: string, value: string): Promise<void> => {
+            try {
+              await invoke('session_save', { value });
+            } catch (e) {
+              console.error('[workspaceStore] session_save failed:', e);
+            }
+          },
+          removeItem: async (_name: string): Promise<void> => {
+            try {
+              await invoke('session_save', { value: '' });
+            } catch (e) {
+              console.error('[workspaceStore] session clear failed:', e);
+            }
+          },
+        }
+      : { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} }
   ),
   partialize: (state) => ({
     workspaces: state.workspaces.map((w) => ({

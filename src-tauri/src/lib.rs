@@ -68,6 +68,8 @@ pub fn run() {
             project::save_clipboard_image,
             project::get_settings,
             project::save_settings,
+            project::session_load,
+            project::session_save,
             dashboard::get_dashboard_config,
             dashboard::save_dashboard_config,
             pty::spawn_terminal,
