@@ -667,10 +667,21 @@ function WorkspaceActionBar({ projectPath, isActive, onClose }: { projectPath?: 
   const base = 'flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer';
   return (
     <>
+      {/* Collapsible wrapper — animating grid-template-rows 0fr → 1fr gives a
+          smooth height unfold (no fixed max-height guess), paired with a
+          fade. `visible` rows stay expanded; others unfold on row hover. */}
       <div
         onClick={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
-        className={`${visible ? 'grid' : 'hidden group-hover:grid'} ${projectPath ? 'grid-cols-3' : 'grid-cols-1'} gap-1 mt-2`}
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+          visible ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover:grid-rows-[1fr]'
+        }`}
+      >
+      <div className="overflow-hidden min-h-0">
+      <div
+        className={`grid ${projectPath ? 'grid-cols-3' : 'grid-cols-1'} gap-1 mt-2 transition-opacity duration-200 ${
+          visible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        }`}
       >
         {projectPath && (
           <button
@@ -706,6 +717,8 @@ function WorkspaceActionBar({ projectPath, isActive, onClose }: { projectPath?: 
         >
           <X size={13} />
         </button>
+      </div>
+      </div>
       </div>
       {backdating && projectPath && (
         <BackdateStartModal projectPath={projectPath} onClose={() => setBackdating(false)} />
