@@ -367,12 +367,13 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
               const anyUnread = claudeTabs.some(t => agentUnread[t.agentSessionId!]);
               return (
                 <div key={w.id}>
-                  {/* Workspace row styled as a card so the project name is
-                      visually distinct from the Claude sub-tab list that
-                      appears under it. Tab colors live on the per-tab rows
-                      below, not on the workspace itself — coloring the
-                      workspace was misleading (a single colored tab made
-                      the whole project look colored). */}
+                  {/* Workspace row: INVERTED pill (light bg, dark text) so
+                      the workspace name is unmistakably distinct from the
+                      dark Claude sub-tab list under it. Active = full ink,
+                      inactive = slightly dimmed. Tab colors live on the
+                      per-tab rows below, not on the workspace itself —
+                      coloring the workspace was misleading (a single colored
+                      tab made the whole project look colored). */}
                   <div
                     onClick={() => {
                       setActiveWorkspace(w.id);
@@ -387,14 +388,14 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       flex items-center gap-2 px-2.5 py-2 rounded-lg border
                       transition-all duration-200 cursor-pointer group
                       ${isActive
-                        ? "bg-surface-raised border-line text-ink shadow-lg"
-                        : "bg-surface/60 border-line-soft text-ink-dim hover:bg-surface-raised hover:border-line hover:text-ink"}
+                        ? "bg-ink border-transparent text-[#0B0D10] shadow-lg"
+                        : "bg-ink/70 border-transparent text-[#0B0D10] hover:bg-ink"}
                     `}
                   >
                     {hasClaude ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleExpanded(w.id); }}
-                        className="p-0.5 -ml-1 text-white/40 hover:text-white shrink-0"
+                        className="p-0.5 -ml-1 text-[#0B0D10]/40 hover:text-[#0B0D10] shrink-0"
                         title={expanded ? 'Collapse' : 'Expand conversations'}
                       >
                         <ChevronRight size={14} className={`transition-transform ${expanded ? 'rotate-90' : ''}`} />
@@ -447,7 +448,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
 
                     <button
                       onClick={(e) => { e.stopPropagation(); removeWorkspace(w.id); }}
-                      className={`p-1 rounded-md text-white/30 hover:text-red-400 hover:bg-white/10 transition-all shrink-0 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                      className={`p-1 rounded-md text-[#0B0D10]/30 hover:text-red-500 hover:bg-[#0B0D10]/10 transition-all shrink-0 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                     >
                       <X size={14} />
                     </button>
@@ -606,8 +607,8 @@ function WorkspaceChronoToggle({ projectPath, workspaceActive }: { projectPath: 
         title={isRunning ? 'Tracking time · click to stop' : 'Start tracking · right-click to backdate the start'}
         className={`p-1 rounded-md transition-all shrink-0 ${
           isRunning
-            ? 'opacity-100 text-amber-300 bg-amber-500/15 hover:bg-amber-500/25'
-            : `text-white/30 hover:text-amber-300 hover:bg-white/10 ${workspaceActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
+            ? 'opacity-100 text-amber-600 bg-amber-500/20 hover:bg-amber-500/30'
+            : `text-[#0B0D10]/35 hover:text-amber-600 hover:bg-[#0B0D10]/10 ${workspaceActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
         }`}
       >
         {isRunning ? <Pause size={12} /> : <Clock size={12} />}
