@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, Keyboard, ChevronRight, History, Loader2, Sparkles, Clock, Pause } from "lucide-react";
+import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, Keyboard, ChevronDown, ChevronRight, History, Loader2, Sparkles, Clock, Pause } from "lucide-react";
 import { useState, useEffect } from 'react';
 import { useWorkspaceStore, Workspace, LayoutNode, TabConfig, TabColor } from '@/app/store/workspaceStore';
 import { useTimeStore } from '@/app/store/timeStore';
@@ -463,6 +463,16 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       isActive={isActive}
                       onClose={() => removeWorkspace(w.id)}
                     />
+
+                    {/* Collapsed-content hint: a workspace hiding conversations
+                        shows a small centered chevron + count at its bottom
+                        edge (clicking the row expands, as usual). */}
+                    {hasClaude && !expanded && (
+                      <div className="flex items-center justify-center gap-1 mt-0.5 -mb-1 text-white/30">
+                        <ChevronDown size={11} />
+                        <span className="text-[9px] font-bold tabular-nums">{claudeTabs.length}</span>
+                      </div>
+                    )}
                   </div>
 
                   {hasClaude && expanded && (
