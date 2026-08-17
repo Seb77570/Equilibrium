@@ -420,11 +420,12 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       setEditingName(w.name);
                     }}
                     className={`
-                      px-2.5 py-2 rounded-lg border
+                      relative px-2.5 py-2 rounded-lg border
                       transition-all duration-200 cursor-pointer group
                       ${isActive
                         ? "bg-gradient-to-r from-sky-900 to-cyan-900 border-sky-700/50 text-sky-50 shadow-lg"
                         : "bg-surface-hi border-line text-ink-dim hover:border-sky-700/50 hover:text-ink"}
+                      ${hasClaude && !expanded ? 'mb-2.5' : ''}
                     `}
                   >
                     {/* Line 1 — the name gets the full width. */}
@@ -464,13 +465,19 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       onClose={() => removeWorkspace(w.id)}
                     />
 
-                    {/* Collapsed-content hint: a workspace hiding conversations
-                        shows a small centered chevron + count at its bottom
-                        edge (clicking the row expands, as usual). */}
+                    {/* Collapsed-content hint: a circular badge straddling the
+                        pill's bottom edge — chevron only, white ring, blue
+                        fill when the workspace is selected. Clicking the row
+                        expands, as usual. */}
                     {hasClaude && !expanded && (
-                      <div className="flex items-center justify-center gap-1 mt-0.5 -mb-1 text-white/30">
-                        <ChevronDown size={11} />
-                        <span className="text-[9px] font-bold tabular-nums">{claudeTabs.length}</span>
+                      <div
+                        className={`absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border flex items-center justify-center pointer-events-none ${
+                          isActive
+                            ? 'bg-sky-800 border-white/60 text-white'
+                            : 'bg-surface-hi border-white/30 text-white/70'
+                        }`}
+                      >
+                        <ChevronDown size={12} />
                       </div>
                     )}
                   </div>
