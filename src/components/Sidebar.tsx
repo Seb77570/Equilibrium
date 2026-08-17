@@ -420,7 +420,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       ${isActive
                         ? "bg-gradient-to-r from-sky-900 to-cyan-900 border-sky-700/50 text-sky-50 shadow-lg"
                         : "bg-surface-hi border-line text-ink-dim hover:border-sky-700/50 hover:text-ink"}
-                      ${hasClaude ? (expanded ? 'mb-2.5' : 'mb-4') : ''}
+                      ${hasClaude ? 'mb-4' : ''}
                     `}
                   >
                     {/* Line 1 — the name gets the full width. */}
@@ -483,7 +483,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                   {hasClaude && expanded && (
                     // Sub-tab list: smaller + dimmer than the workspace card
                     // so it reads as a child group, not another peer entry.
-                    <div className="ml-[18px] mt-1 mb-1 space-y-0.5 border-l border-white/10 pl-2">
+                    <div className="ml-[18px] mt-1 mb-1 space-y-0.5 border-l border-white/25 pl-2">
                       {claudeTabs.map(t => {
                         const working = agentStatus[t.agentSessionId!] === 'working';
                         const unread = !!agentUnread[t.agentSessionId!];
