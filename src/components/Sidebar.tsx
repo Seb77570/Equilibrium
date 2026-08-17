@@ -483,9 +483,9 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                   {hasClaude && expanded && (
                     // Sub-tab list: smaller + dimmer than the workspace card
                     // so it reads as a child group, not another peer entry.
-                    {/* pt-5 (not a margin on the pill) so the left rail runs
-                        uninterrupted from the pill's bottom edge down to the
-                        first conversation. */}
+                    // pt-5 (not a margin on the pill) so the left rail runs
+                    // uninterrupted from the pill's bottom edge down to the
+                    // first conversation.
                     <div className="ml-[18px] pt-5 mb-1 space-y-0.5 border-l border-white/25 pl-2">
                       {claudeTabs.map(t => {
                         const working = agentStatus[t.agentSessionId!] === 'working';
