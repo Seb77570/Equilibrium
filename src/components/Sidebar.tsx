@@ -425,7 +425,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       ${isActive
                         ? "bg-gradient-to-r from-sky-900 to-cyan-900 border-sky-700/50 text-sky-50 shadow-lg"
                         : "bg-surface-hi border-line text-ink-dim hover:border-sky-700/50 hover:text-ink"}
-                      ${hasClaude && !expanded ? 'mb-2.5' : ''}
+                      ${hasClaude && !expanded ? 'mb-4' : ''}
                     `}
                   >
                     {/* Line 1 — the name gets the full width. */}
@@ -470,15 +470,18 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                         fill when the workspace is selected. Clicking the row
                         expands, as usual. */}
                     {hasClaude && !expanded && (
-                      <div
-                        className={`absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border flex items-center justify-center pointer-events-none ${
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleExpanded(w.id); }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        title="Show conversations"
+                        className={`absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
                           isActive
-                            ? 'bg-sky-800 border-white/60 text-white'
-                            : 'bg-surface-hi border-white/30 text-white/70'
+                            ? 'bg-sky-800 border-white/60 text-white hover:bg-sky-700'
+                            : 'bg-surface-hi border-white/30 text-white/70 hover:border-white/60 hover:text-white'
                         }`}
                       >
                         <ChevronDown size={12} />
-                      </div>
+                      </button>
                     )}
                   </div>
 
