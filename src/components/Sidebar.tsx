@@ -406,7 +406,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       setEditingName(w.name);
                     }}
                     className={`
-                      relative px-2.5 py-2 rounded-lg border
+                      relative px-2 py-1.5 rounded-lg border
                       transition-all duration-200 cursor-pointer group
                       ${isActive
                         ? "bg-gradient-to-r from-sky-900 to-cyan-900 border-sky-700/50 text-sky-50 shadow-lg"
@@ -447,7 +447,6 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                     {/* Line 2 — segmented action bar: chrono · backdate · close. */}
                     <WorkspaceActionBar
                       projectPath={w.metadata?.projectPath}
-                      isActive={isActive}
                       onClose={() => removeWorkspace(w.id)}
                     />
 
@@ -672,35 +671,23 @@ function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNo
 
 
 // Segmented action bar under the workspace name: three equal sections filling
-// the pill width — chrono toggle, backdate-start, close. Always visible for
-// the active workspace or while its chrono runs (the amber cue must never
-// hide); hover-revealed on quiet rows so the list stays compact. Workspaces
-// without a bound project only get the close section. Subscribes only to the
-// boolean "is this project running?", so flipping unrelated chronos doesn't
-// re-render every row.
-function WorkspaceActionBar({ projectPath, isActive, onClose }: { projectPath?: string; isActive: boolean; onClose: () => void }) {
+// the pill width — chrono toggle, backdate-start, close. Always rendered: it
+// used to unfold on hover, but the row growing under the cursor made the whole
+// list shift around, so the height is now constant and the padding tightened
+// instead. Workspaces without a bound project only get the close section.
+// Subscribes only to the boolean "is this project running?", so flipping
+// unrelated chronos doesn't re-render every row.
+function WorkspaceActionBar({ projectPath, onClose }: { projectPath?: string; onClose: () => void }) {
   const isRunning = useTimeStore((s) => (projectPath ? !!s.running[projectPath] : false));
   const toggle = useTimeStore((s) => s.toggle);
   const [backdating, setBackdating] = useState(false);
-  const visible = isActive || isRunning;
-  const base = 'flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer';
+  const base = 'flex items-center justify-center py-0.5 rounded-md transition-colors cursor-pointer';
   return (
     <>
-      {/* Collapsible wrapper — animating grid-template-rows 0fr → 1fr gives a
-          smooth height unfold (no fixed max-height guess), paired with a
-          fade. `visible` rows stay expanded; others unfold on row hover. */}
       <div
         onClick={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
-        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-          visible ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover:grid-rows-[1fr]'
-        }`}
-      >
-      <div className="overflow-hidden min-h-0">
-      <div
-        className={`grid ${projectPath ? 'grid-cols-3' : 'grid-cols-1'} gap-1 mt-2 transition-opacity duration-200 ${
-          visible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-        }`}
+        className={`grid ${projectPath ? 'grid-cols-3' : 'grid-cols-1'} gap-1 mt-1`}
       >
         {projectPath && (
           <button
@@ -712,7 +699,7 @@ function WorkspaceActionBar({ projectPath, isActive, onClose }: { projectPath?: 
                 : 'bg-black/20 text-white/50 hover:bg-black/40 hover:text-amber-300'
             }`}
           >
-            {isRunning ? <Pause size={13} /> : <Clock size={13} />}
+            {isRunning ? <Pause size={12} /> : <Clock size={12} />}
           </button>
         )}
         {projectPath && (
@@ -726,7 +713,7 @@ function WorkspaceActionBar({ projectPath, isActive, onClose }: { projectPath?: 
                 : 'bg-black/20 text-white/50 hover:bg-black/40 hover:text-amber-300'
             }`}
           >
-            <History size={13} />
+            <History size={12} />
           </button>
         )}
         <button
@@ -734,10 +721,8 @@ function WorkspaceActionBar({ projectPath, isActive, onClose }: { projectPath?: 
           title="Close workspace"
           className={`${base} bg-black/20 text-white/50 hover:bg-black/40 hover:text-red-400`}
         >
-          <X size={13} />
+          <X size={12} />
         </button>
-      </div>
-      </div>
       </div>
       {backdating && projectPath && (
         <BackdateStartModal projectPath={projectPath} onClose={() => setBackdating(false)} />
