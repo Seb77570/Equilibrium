@@ -9,6 +9,7 @@ import TodoView from "@/components/TodoView";
 import TimeView from "@/components/TimeView";
 import WorkspaceView from "@/components/Workspace/WorkspaceView";
 import PortMonitor from "@/components/PortMonitor";
+import FullscreenToggle from "@/components/FullscreenToggle";
 import { useTimeTracker } from "@/app/store/timeStore";
 import { SortableProject } from "@/components/SortableProject";
 import DetachedTabView from "@/components/DetachedTabView";
@@ -373,6 +374,7 @@ function MainDashboard() {
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-base">
       <PortMonitor projects={projects} />
+      <FullscreenToggle />
       <Sidebar activeView={activeView} onNavigate={setActiveView} />
       
       <div className="flex-1 relative">

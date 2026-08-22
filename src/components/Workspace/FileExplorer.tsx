@@ -149,7 +149,7 @@ export default function FileExplorer({
 
   return (
     <div className="absolute top-0 right-0 h-full w-72 z-[200] bg-[#141519] border-l border-white/10 shadow-2xl flex flex-col">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 shrink-0">
+      <div className="flex items-center justify-between pl-3 pr-10 py-2 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <FolderTree size={13} className="text-brand shrink-0" />
           <span className="text-[11px] font-bold uppercase tracking-widest text-white/60 truncate">{projectName}</span>
