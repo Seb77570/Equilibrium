@@ -16,6 +16,8 @@ export interface Todo {
   done: boolean;
   priority: boolean;
   created_ms: number;
+  /** Last edit to the task itself. Drag-reordering doesn't bump it. */
+  updated_ms: number;
   done_ms: number | null;
   order: number;
 }
@@ -73,6 +75,7 @@ export const useTodoStore = create<TodoState>((set, get) => ({
       done: false,
       priority: false,
       created_ms: Date.now(),
+      updated_ms: Date.now(),
       done_ms: null,
       order: minOrder - 1,
     };
@@ -92,6 +95,7 @@ export const useTodoStore = create<TodoState>((set, get) => ({
       ...current,
       done: !current.done,
       done_ms: current.done ? null : Date.now(),
+      updated_ms: Date.now(),
     };
     set({ todos: get().todos.map((t) => (t.id === id ? next : t)) });
     try {
@@ -108,7 +112,7 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     // deleting is an explicit action, never an accidental side effect of
     // clearing an input.
     if (!current || !trimmed || trimmed === current.text) return;
-    const next: Todo = { ...current, text: trimmed };
+    const next: Todo = { ...current, text: trimmed, updated_ms: Date.now() };
     set({ todos: get().todos.map((t) => (t.id === id ? next : t)) });
     try {
       await persist(next);
@@ -120,7 +124,7 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   togglePriority: async (id) => {
     const current = get().todos.find((t) => t.id === id);
     if (!current) return;
-    const next: Todo = { ...current, priority: !current.priority };
+    const next: Todo = { ...current, priority: !current.priority, updated_ms: Date.now() };
     set({ todos: get().todos.map((t) => (t.id === id ? next : t)) });
     try {
       await persist(next);
@@ -134,7 +138,12 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     if (!current || current.project_path === projectPath) return;
     const siblings = get().todos.filter((t) => t.project_path === projectPath);
     const minOrder = siblings.length ? Math.min(...siblings.map((t) => t.order)) : 0;
-    const next: Todo = { ...current, project_path: projectPath, order: minOrder - 1 };
+    const next: Todo = {
+      ...current,
+      project_path: projectPath,
+      order: minOrder - 1,
+      updated_ms: Date.now(),
+    };
     set({ todos: get().todos.map((t) => (t.id === id ? next : t)) });
     try {
       await persist(next);
@@ -194,15 +203,47 @@ export function useTodos(): void {
 }
 
 /**
+ * How the list is ordered.
+ *   'manual'  — grouped by project, hand-ordered inside each (drag to sort)
+ *   'created' — newest task first, groups flattened
+ *   'updated' — most recently touched first, groups flattened
+ */
+export type SortMode = 'manual' | 'created' | 'updated';
+
+/**
  * Open tasks first (priority-flagged on top, then manual order), completed
  * ones last and most-recently-finished first — so ticking something off
  * moves it straight to the top of the done pile.
+ *
+ * The date modes ignore the priority flag on purpose: asking for "newest
+ * first" and getting flagged items pinned above them isn't newest first.
  */
-export function sortTodos(todos: Todo[]): Todo[] {
+export function sortTodos(todos: Todo[], mode: SortMode = 'manual'): Todo[] {
   return [...todos].sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     if (a.done) return (b.done_ms ?? 0) - (a.done_ms ?? 0);
+    if (mode === 'created') return b.created_ms - a.created_ms;
+    if (mode === 'updated') return b.updated_ms - a.updated_ms;
     if (a.priority !== b.priority) return a.priority ? -1 : 1;
     return a.order - b.order;
+  });
+}
+
+/**
+ * Compact stamp for the right of a task row: time for today, weekday for the
+ * last week, then day+month, plus the year once it's not the current one.
+ * Long enough to be unambiguous, short enough not to crowd the task text.
+ */
+export function formatStamp(ms: number): string {
+  const d = new Date(ms);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+  if (days >= 1 && days < 7) return d.toLocaleDateString(undefined, { weekday: 'short' });
+  return d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: '2-digit' }),
   });
 }

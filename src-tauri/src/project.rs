@@ -168,6 +168,9 @@ pub async fn add_project(app: AppHandle, path: String) -> Result<Project, String
 pub async fn remove_project(app: AppHandle, path: String) -> Result<(), String> {
     let mut projects = read_registry(&app).unwrap_or_default();
     projects.retain(|p| p.path != path);
+    // Forgetting a project must not silently destroy its to-do list: the
+    // tasks are detached into the Inbox so they stay visible and recoverable.
+    crate::todos::orphan_project_todos(&app, &path);
     write_registry(&app, &projects)
 }
 
@@ -268,6 +271,24 @@ fn detect_project_info(path: &Path) -> (String, Option<String>, Option<u16>, Opt
     }
 
     (p_type, description, port, None, dev_command, install_path, executable_path, claude_env, links)
+}
+
+// Opens the app-data dir (settings.json, projects.json, todos.json…) in the
+// file manager. Surfaced from Settings so the user can back up or inspect
+// their data without hunting for %APPDATA%.
+#[tauri::command]
+pub async fn open_config_dir(app: AppHandle) -> Result<(), String> {
+    let dir = config_dir(&app)?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = dir;
+    Ok(())
 }
 
 #[tauri::command]

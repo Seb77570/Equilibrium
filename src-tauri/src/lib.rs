@@ -3,6 +3,7 @@ mod dashboard;
 mod pty;
 mod claude_sessions;
 mod time_tracking;
+mod todos;
 
 #[cfg(not(debug_assertions))]
 mod static_server;
@@ -54,6 +55,7 @@ pub fn run() {
             project::add_project,
             project::remove_project,
             project::open_in_explorer,
+            project::open_config_dir,
             project::run_dev_command,
             project::open_url,
             project::open_antigravity,
@@ -88,7 +90,12 @@ pub fn run() {
             time_tracking::time_entry_save,
             time_tracking::time_entry_delete,
             time_tracking::time_settings_get,
-            time_tracking::time_settings_save
+            time_tracking::time_settings_save,
+            todos::todos_get_all,
+            todos::todo_save,
+            todos::todo_delete,
+            todos::todos_reorder,
+            todos::todos_clear_done
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
