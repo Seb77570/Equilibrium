@@ -24,7 +24,7 @@ Equilibrium is a local desktop app (Tauri 2 + Next.js) built for developers who 
 - **Workspaces with real terminals** — tabbed workspaces per project with true PTY terminals (PowerShell or WSL), split panes, in-app browser tabs, and a retractable file explorer. Terminals support image paste (great for Claude vision input), smart clipboard handling, and WSL path translation.
 - **Claude Code session browser** — reads your local Claude Code history (`~/.claude/projects`) and shows every conversation per project: title, last activity, git branch, live working/idle status. Resume any session in one click (`claude --resume`), rename sessions, and keep names in sync with Claude's own `/rename`. Handles separate PowerShell and WSL histories.
 - **Time tracking** — a per-project chronometer with idle auto-stop, backdated entries, a manual entry editor, a 24-hour timeline view, and CSV export (projects × days matrix, Excel-ready).
-- **Cheat sheet** — a built-in Claude Code reference for shortcuts, slash commands, and CLI flags.
+- **To-do lists** — a per-project task list with drag ordering, priority flags and a cross-project view. Stored in your user data folder, so updates and uninstalls never touch it.
 
 Everything runs and stays **100% local**. Equilibrium makes no network calls to any third-party service; your Claude transcripts are read from disk, read-only, and never leave your machine.
 
