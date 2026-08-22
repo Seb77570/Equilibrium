@@ -411,7 +411,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       ${isActive
                         ? "bg-gradient-to-r from-sky-900 to-cyan-900 border-sky-700/50 text-sky-50 shadow-lg"
                         : "bg-surface-hi border-line text-ink-dim hover:border-sky-700/50 hover:text-ink"}
-                      ${hasClaude && !expanded ? 'mb-4' : ''}
+                      ${hasClaude && !expanded ? 'mb-5' : ''}
                       ${hasClaude ? `ai-ring-subtle ${aiRingClass(anyWorking, anyUnread)}` : ''}
                     `}
                   >
@@ -459,7 +459,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                         onClick={(e) => { e.stopPropagation(); toggleExpanded(w.id); }}
                         onDoubleClick={(e) => e.stopPropagation()}
                         title={expanded ? 'Hide conversations' : 'Show conversations'}
-                        className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
+                        className={`absolute -bottom-[18px] left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
                           isActive
                             ? 'bg-sky-800 border-white/60 text-white hover:bg-sky-700'
                             : 'bg-surface-hi border-white/30 text-white/70 hover:border-white/60 hover:text-white'
@@ -681,7 +681,7 @@ function WorkspaceActionBar({ projectPath, onClose }: { projectPath?: string; on
   const isRunning = useTimeStore((s) => (projectPath ? !!s.running[projectPath] : false));
   const toggle = useTimeStore((s) => s.toggle);
   const [backdating, setBackdating] = useState(false);
-  const base = 'flex items-center justify-center py-0.5 rounded-md transition-colors cursor-pointer';
+  const base = 'flex items-center justify-center py-1 rounded-md transition-colors cursor-pointer';
   return (
     <>
       <div
