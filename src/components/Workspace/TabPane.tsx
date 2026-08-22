@@ -212,7 +212,11 @@ export default function TabPane({ paneId, tabIds, activeTabId, workspaceId, meta
       {/* ── Tab strip ─────────────────────────────────────────────────────
           Outer flex: tabs scroll horizontally on the left, fullscreen toggle
           stays pinned to the right (outside the scroll area). */}
-      <div className="flex items-center bg-[#16161a] border-b border-white/5 h-9 shrink-0">
+      {/* pr-9 keeps the pane's fullscreen toggle clear of the window-level
+          one, which floats over this strip's right end (FullscreenToggle,
+          fixed top-2 right-2). Without it the two icons sit on top of each
+          other and only the window one is clickable. */}
+      <div className="flex items-center bg-[#16161a] border-b border-white/5 h-9 shrink-0 pr-9">
         <div className="flex items-center flex-1 min-w-0 overflow-x-auto">
           {tabIds.map(id => {
             const tab = allTabs[id];

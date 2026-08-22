@@ -25,8 +25,11 @@ export default function FullscreenToggle() {
       const target = next ?? !(await win.isFullscreen());
       await win.setFullscreen(target);
       setIsFullscreen(target);
-    } catch {
-      // Not running under Tauri (plain browser / SSR): nothing to toggle.
+    } catch (e) {
+      // Outside Tauri (plain browser / SSR) there's simply nothing to toggle,
+      // but a missing `core:window:allow-set-fullscreen` capability lands here
+      // too and looks identical from the UI — so say which one it was.
+      console.warn('[FullscreenToggle] setFullscreen failed:', e);
     }
   };
 
