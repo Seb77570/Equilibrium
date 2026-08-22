@@ -459,7 +459,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                         onClick={(e) => { e.stopPropagation(); toggleExpanded(w.id); }}
                         onDoubleClick={(e) => e.stopPropagation()}
                         title={expanded ? 'Hide conversations' : 'Show conversations'}
-                        className={`absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
+                        className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
                           isActive
                             ? 'bg-sky-800 border-white/60 text-white hover:bg-sky-700'
                             : 'bg-surface-hi border-white/30 text-white/70 hover:border-white/60 hover:text-white'
