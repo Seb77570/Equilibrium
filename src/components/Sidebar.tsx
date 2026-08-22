@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, Keyboard, ChevronDown, ChevronRight, ChevronUp, History, Loader2, Sparkles, Clock, Pause } from "lucide-react";
+import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, Keyboard, ChevronDown, ChevronRight, ChevronUp, History, Sparkles, Clock, Pause } from "lucide-react";
 import { useState, useEffect } from 'react';
 import { useWorkspaceStore, Workspace, LayoutNode, TabConfig, TabColor } from '@/app/store/workspaceStore';
 import { useTimeStore } from '@/app/store/timeStore';
@@ -72,19 +72,10 @@ function findPaneIdForTab(node: LayoutNode, tabId: string): string | null {
 
 // Working → amber spinner. Finished-but-unread → green dot (notification).
 // Read/idle → nothing.
-function AgentStatusDot({ working, unread, size = 8 }: { working: boolean; unread: boolean; size?: number }) {
-  if (working) {
-    return <Loader2 size={size + 2} className="text-amber-400 animate-spin shrink-0" />;
-  }
-  if (unread) {
-    return (
-      <span
-        className="rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)] shrink-0"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-  return null;
+// Agent status (working / finished-unread) is rendered as a ring around the
+// row or pill — see .ai-ring-* in globals.css.
+function aiRingClass(working: boolean, unread: boolean): string {
+  return working ? 'ai-ring-working' : unread ? 'ai-ring-done' : '';
 }
 
 interface SidebarProps {
@@ -421,6 +412,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                         ? "bg-gradient-to-r from-sky-900 to-cyan-900 border-sky-700/50 text-sky-50 shadow-lg"
                         : "bg-surface-hi border-line text-ink-dim hover:border-sky-700/50 hover:text-ink"}
                       ${hasClaude && !expanded ? 'mb-4' : ''}
+                      ${hasClaude ? `ai-ring-subtle ${aiRingClass(anyWorking, anyUnread)}` : ''}
                     `}
                   >
                     {/* Line 1 — the name gets the full width. */}
@@ -450,7 +442,6 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                       <span className="font-semibold text-sm truncate flex-1 text-center select-none tracking-tight">{w.name}</span>
                     )}
 
-                    {hasClaude && <AgentStatusDot working={anyWorking} unread={anyUnread} />}
                     </div>
 
                     {/* Line 2 — segmented action bar: chrono · backdate · close. */}
@@ -522,7 +513,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                               setConvColorMenu({ wId: w.id, tabId: t.id, top: e.clientY + 4, left: e.clientX });
                             }}
                             title={t.title}
-                            className={`flex items-center gap-2 px-2 py-1 rounded-lg text-[11px] font-normal cursor-pointer transition-colors ${rowClass}`}
+                            className={`relative flex items-center gap-2 px-2 py-1 rounded-lg text-[11px] font-normal cursor-pointer transition-colors ${rowClass} ${aiRingClass(working, unread)}`}
                           >
                             {/* Sparkles inherits the row text color when the
                                 row is tinted, so it matches the highlight. */}
@@ -531,7 +522,6 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                             {isTabActive && color && (
                               <span className={`w-2 h-2 rounded-full shrink-0 ${TAB_COLOR_DOT[color]}`} title={`Tab color: ${color}`} />
                             )}
-                            <AgentStatusDot working={working} unread={unread} size={6} />
                           </div>
                         );
                       })}

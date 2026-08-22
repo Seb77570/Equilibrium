@@ -146,3 +146,53 @@ body {
     animation: none;
   }
 }
+
+/* ---- Sidebar AI-status rings ----------------------------------------
+   A conversation row (or workspace pill) wears a thin ring instead of a
+   status dot, so the ring never collides with the tab-color dot:
+   - .ai-ring-done    → solid ring, same tone as the conversation rail
+   - .ai-ring-working → faint ring + one bright segment circling the edge
+   .ai-ring-subtle lowers both for the already-busy workspace pill. */
+@property --ai-ring-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+.ai-ring-done {
+  outline: 1px solid rgba(255, 255, 255, var(--ai-ring-alpha, 0.28));
+  outline-offset: 0;
+}
+.ai-ring-working {
+  position: relative;
+  outline: 1px solid rgba(255, 255, 255, calc(var(--ai-ring-alpha, 0.28) * 0.45));
+  outline-offset: 0;
+}
+.ai-ring-working::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--ai-ring-angle),
+    transparent 0 70%,
+    rgba(255, 255, 255, var(--ai-ring-glow, 0.9)) 88%,
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ai-ring-spin 2.2s linear infinite;
+}
+.ai-ring-subtle {
+  --ai-ring-alpha: 0.18;
+  --ai-ring-glow: 0.6;
+}
+@keyframes ai-ring-spin {
+  to { --ai-ring-angle: 360deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-ring-working::before { animation: none; }
+}
