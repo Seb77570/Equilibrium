@@ -376,7 +376,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
             </div>
           </div>
           
-          <div className="space-y-1.5 overflow-y-auto custom-scrollbar">
+          <div className="space-y-1.5 overflow-y-auto custom-scrollbar px-[2px]">
             {workspaces.map(w => {
               const isActive = activeView === 'workspaces' && activeWorkspaceId === w.id;
               const claudeTabs = Object.values(w.allTabs).filter(t => t.agentSessionId);
