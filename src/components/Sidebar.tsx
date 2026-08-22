@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, Keyboard, ChevronDown, ChevronRight, ChevronUp, History, Sparkles, Clock, Pause } from "lucide-react";
+import { LayoutDashboard, Settings, FolderClosed, Github, Globe, Terminal, Plus, X, ListTodo, ChevronDown, ChevronRight, ChevronUp, History, Sparkles, Clock, Pause } from "lucide-react";
 import { useState, useEffect } from 'react';
 import { useWorkspaceStore, Workspace, LayoutNode, TabConfig, TabColor } from '@/app/store/workspaceStore';
 import { useTimeStore } from '@/app/store/timeStore';
@@ -84,7 +84,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
-  const { workspaces, activeWorkspaceId, setActiveWorkspace, addWorkspace, removeWorkspace, renameWorkspace, projectStatuses, agentStatus, agentUnread, setActiveTab, renameTab, setTabColor } = useWorkspaceStore();
+  const { workspaces, activeWorkspaceId, setActiveWorkspace, addWorkspace, removeWorkspace, renameWorkspace, projectStatuses, agentStatus, agentUnread, setActiveTab, renameTab, setTabColor, removeTab } = useWorkspaceStore();
   // Right-click color picker for a conversation row (mirrors TabPane's).
   const [convColorMenu, setConvColorMenu] = useState<{ wId: string; tabId: string; top: number; left: number } | null>(null);
   // Workspaces are expanded by default; we track the ones the user collapsed.
@@ -227,10 +227,10 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
             onClick={() => onNavigate('time')}
           />
           <NavItem
-            icon={<Keyboard size={20} />}
-            label="Cheat Sheet"
-            active={activeView === 'cheatsheet'}
-            onClick={() => onNavigate('cheatsheet')}
+            icon={<ListTodo size={20} />}
+            label="To Do"
+            active={activeView === 'todo'}
+            onClick={() => onNavigate('todo')}
           />
         </div>
 
@@ -513,15 +513,33 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
                               setConvColorMenu({ wId: w.id, tabId: t.id, top: e.clientY + 4, left: e.clientX });
                             }}
                             title={t.title}
-                            className={`relative flex items-center gap-2 px-2 py-1 rounded-lg text-[11px] font-normal cursor-pointer transition-colors ${rowClass} ${aiRingClass(working, unread)}`}
+                            className={`group/conv relative flex items-center gap-2 px-2 py-1 rounded-lg text-[11px] font-normal cursor-pointer transition-colors ${rowClass} ${aiRingClass(working, unread)}`}
                           >
                             {/* Sparkles inherits the row text color when the
                                 row is tinted, so it matches the highlight. */}
                             <Sparkles size={10} className={`shrink-0 ${color || isTabActive ? 'opacity-80' : 'text-violet-300/50'}`} />
                             <span className="truncate flex-1">{t.title}</span>
-                            {isTabActive && color && (
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${TAB_COLOR_DOT[color]}`} title={`Tab color: ${color}`} />
-                            )}
+                            {/* Right slot: the tab-color dot at rest, a close
+                                button on hover — one occupies the other's spot
+                                so the row never reflows. */}
+                            <span className="relative w-3 h-3 shrink-0">
+                              {isTabActive && color && (
+                                <span
+                                  className={`absolute inset-0 m-auto w-2 h-2 rounded-full transition-opacity group-hover/conv:opacity-0 ${TAB_COLOR_DOT[color]}`}
+                                  title={`Tab color: ${color}`}
+                                />
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeTab(w.id, t.id);
+                                }}
+                                title="Close conversation"
+                                className="absolute inset-0 flex items-center justify-center rounded opacity-0 group-hover/conv:opacity-100 transition-opacity hover:bg-white/15 hover:text-white"
+                              >
+                                <X size={10} />
+                              </button>
+                            </span>
                           </div>
                         );
                       })}

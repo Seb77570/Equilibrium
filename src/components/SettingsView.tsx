@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { invoke } from '@tauri-apps/api/core';
-import { Save, Folder, Info } from "lucide-react";
+import { Save, Folder, Info, FolderOpen } from "lucide-react";
 
 interface AppSettings {
   default_agent_command?: string;
@@ -101,7 +101,18 @@ export default function SettingsView() {
               <br />• <strong>settings.json</strong>: Application preferences.
               <br />• <strong>projects.json</strong>: Your added projects and their metadata.
               <br />• <strong>dashboard.json</strong>: Section names, colors, and project order.
+              <br />• <strong>todos.json</strong>: Your per-project to-do lists.
             </p>
+            <p className="text-xs text-white/40 leading-relaxed pt-1">
+              They live in your user data folder — outside the install directory — so
+              updating or uninstalling Equilibrium never touches them.
+            </p>
+            <button
+              onClick={() => invoke('open_config_dir').catch(() => {})}
+              className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-medium text-white/70 hover:text-white transition-colors"
+            >
+              <FolderOpen size={13} /> Open data folder
+            </button>
           </div>
         </section>
 

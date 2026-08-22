@@ -496,7 +496,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(persist((set, get) => 
   // runtime state (PTY status, unread flags, project running-status) is
   // deliberately excluded — it's rebuilt from scratch as terminals re-spawn.
   name: 'equilibrium-workspace-session',
-  version: 1,
+  version: 2,
+  // v1 -> v2: the Cheat Sheet view was removed. A session persisted while it
+  // was open would otherwise restore to a view that no longer renders, i.e.
+  // a blank window. Rewriting it here also drops the last stored trace of
+  // that view from the session file on the next save.
+  migrate: (persisted, version) => {
+    const state = persisted as { activeView?: string } | undefined;
+    if (version < 2 && state && state.activeView === 'cheatsheet') {
+      state.activeView = 'dashboard';
+    }
+    return state as never;
+  },
   // File-backed via Rust, NOT localStorage. localStorage is scoped to the
   // page origin INCLUDING the port, and release builds serve the UI from
   // http://localhost:<random port> — a different (empty) storage bucket on

@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import { useWorkspaceStore } from "@/app/store/workspaceStore";
 import ProjectCard from "@/components/ProjectCard";
 import SettingsView from "@/components/SettingsView";
-import CheatSheetView from "@/components/CheatSheetView";
+import TodoView from "@/components/TodoView";
 import TimeView from "@/components/TimeView";
 import WorkspaceView from "@/components/Workspace/WorkspaceView";
 import PortMonitor from "@/components/PortMonitor";
@@ -380,8 +380,8 @@ function MainDashboard() {
           <SettingsView />
         </div>
 
-        <div className={`absolute inset-0 p-8 overflow-y-auto transition-opacity duration-300 ${activeView === 'cheatsheet' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
-          <CheatSheetView />
+        <div className={`absolute inset-0 p-8 overflow-y-auto transition-opacity duration-300 ${activeView === 'todo' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
+          <TodoView />
         </div>
 
         <div className={`absolute inset-0 p-8 overflow-y-auto transition-opacity duration-300 ${activeView === 'time' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
